@@ -5,161 +5,154 @@ export default function Home() {
   const [tone, setTone] = useState("Professional");
   const [resumeText, setResumeText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  const [output, setOutput] = useState("");
 
-  const submit = async (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setOutput("");
     setLoading(true);
-    setResult("");
-
-    // Build the chat messages for the OpenAI API
-    const messages = [
-      {
-        role: "system",
-        content:
-          "You are a professional resume assistant. Improve resumes for specific roles. Output only the improved resume text, no explanations.",
-      },
-      {
-        role: "user",
-        content: `
-Job role: ${jobRole}
-Preferred tone: ${tone}
-Current resume:
-${resumeText}
-
-Task: Rewrite and improve the resume to be more compelling and targeted to the job role. Keep it concise, metrics-driven where possible, and ATS-friendly. Output only the improved resume text.
-        `.trim(),
-      },
-    ];
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({
+          job_role: jobRole,
+          tone,
+          resume_text: resumeText,
+        }),
       });
 
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(t || `Request failed: ${res.status}`);
+      }
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
-      setResult(data.reply || "");
+      // Expecting { text: "..." } from /api/chat
+      setOutput(data.text ?? JSON.stringify(data));
     } catch (err) {
-      setResult(`Error: ${err.message}`);
+      setError(err.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <h1 style={{ marginTop: 0 }}>AmplyAI — Resume Helper (DIY)</h1>
+    <main
+      style={{
+        maxWidth: 900,
+        margin: "40px auto",
+        padding: 24,
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+      }}
+    >
+      <h1 style={{ marginBottom: 6 }}>AmplyAI — Resume Helper (DIY)</h1>
+      <p style={{ color: "#666", marginTop: 0 }}>
+        Paste your resume, pick a tone, and tell me the job role. I’ll rewrite it.
+      </p>
 
-        <form onSubmit={submit} style={styles.form}>
-          <label style={styles.label}>
-            Job role you’re applying for
-            <input
-              style={styles.input}
-              value={jobRole}
-              onChange={(e) => setJobRole(e.target.value)}
-              placeholder="e.g., Product Manager"
-              required
-            />
-          </label>
+      <form onSubmit={onSubmit} style={{ display: "grid", gap: 16 }}>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span>Job role you’re applying for</span>
+          <input
+            value={jobRole}
+            onChange={(e) => setJobRole(e.target.value)}
+            placeholder="e.g., Product Manager"
+            required
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #ccc",
+              borderRadius: 8,
+            }}
+          />
+        </label>
 
-          <label style={styles.label}>
-            Tone
-            <select
-              style={styles.input}
-              value={tone}
-              onChange={(e) => setTone(e.target.value)}
-            >
-              <option>Professional</option>
-              <option>Creative</option>
-              <option>Friendly</option>
-              <option>Straightforward</option>
-            </select>
-          </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span>Desired tone</span>
+          <select
+            value={tone}
+            onChange={(e) => setTone(e.target.value)}
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #ccc",
+              borderRadius: 8,
+            }}
+          >
+            <option>Professional</option>
+            <option>Creative</option>
+            <option>Friendly</option>
+            <option>Straightforward</option>
+          </select>
+        </label>
 
-          <label style={styles.label}>
-            Paste your current resume (or main bullets)
-            <textarea
-              style={{ ...styles.input, height: 160 }}
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-              placeholder="Paste resume text here…"
-              required
-            />
-          </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span>Current resume text</span>
+          <textarea
+            value={resumeText}
+            onChange={(e) => setResumeText(e.target.value)}
+            placeholder="Paste your resume here…"
+            required
+            rows={12}
+            style={{
+              padding: 12,
+              border: "1px solid #ccc",
+              borderRadius: 8,
+              fontFamily: "inherit",
+            }}
+          />
+        </label>
 
-          <button style={styles.button} disabled={loading}>
-            {loading ? "Improving…" : "Improve Resume"}
-          </button>
-        </form>
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            padding: "12px 16px",
+            border: "1px solid transparent",
+            background: "#111",
+            color: "#fff",
+            borderRadius: 10,
+            cursor: loading ? "not-allowed" : "pointer",
+          }}
+        >
+          {loading ? "Rewriting…" : "Rewrite my resume"}
+        </button>
+      </form>
 
-        <div style={styles.output}>
-          <h3>Improved Resume</h3>
-          {result ? <pre style={styles.pre}>{result}</pre> : <p>No output yet.</p>}
+      {error && (
+        <div
+          style={{
+            marginTop: 18,
+            padding: 12,
+            background: "#ffe8e8",
+            border: "1px solid #ffb3b3",
+            borderRadius: 8,
+            color: "#b10000",
+          }}
+        >
+          {error}
         </div>
-      </div>
-      <footer style={{ marginTop: 24, opacity: 0.6 }}>
-        Built with Next.js + OpenAI
-      </footer>
-    </div>
+      )}
+
+      {output && (
+        <section style={{ marginTop: 24 }}>
+          <h2>Improved Resume</h2>
+          <textarea
+            readOnly
+            value={output}
+            rows={14}
+            style={{
+              width: "100%",
+              padding: 12,
+              border: "1px solid #ccc",
+              borderRadius: 8,
+              fontFamily: "inherit",
+            }}
+          />
+        </section>
+      )}
+    </main>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    padding: 24,
-    background: "#0b0b0c",
-    color: "#fff",
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 820,
-    background: "#121316",
-    border: "1px solid #2a2b31",
-    borderRadius: 16,
-    padding: 20,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-  },
-  form: { display: "grid", gap: 12, marginBottom: 16 },
-  label: { display: "grid", gap: 8, fontSize: 14 },
-  input: {
-    background: "#0e0f12",
-    border: "1px solid #2a2b31",
-    color: "#fff",
-    padding: "10px 12px",
-    borderRadius: 10,
-    outline: "none",
-  },
-  button: {
-    marginTop: 6,
-    background: "#7c5cff",
-    border: "none",
-    color: "#fff",
-    padding: "12px 14px",
-    borderRadius: 10,
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  output: {
-    marginTop: 18,
-    borderTop: "1px solid #2a2b31",
-    paddingTop: 14,
-  },
-  pre: {
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    background: "#0e0f12",
-    border: "1px solid #2a2b31",
-    borderRadius: 10,
-    padding: 12,
-  },
-};
-
