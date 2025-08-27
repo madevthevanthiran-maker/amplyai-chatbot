@@ -1,158 +1,183 @@
+// pages/index.js
+
 import { useState } from "react";
 
 export default function Home() {
-  const [jobRole, setJobRole] = useState("");
+  const [jobRole, setJobRole] = useState("software engineer");
   const [tone, setTone] = useState("Professional");
   const [resumeText, setResumeText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [output, setOutput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const onSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setErrorMsg("");
     setOutput("");
-    setLoading(true);
 
+    // simple client-side validation that matches the server
+    if (!jobRole || !tone || !resumeText) {
+      setErrorMsg("Please fill in the job role, tone, and current resume text.");
+      return;
+    }
+
+    setLoading(true);
     try {
-      const res = await fetch("/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          job_role: jobRole,
+          jobRole,
           tone,
-          resume_text: resumeText,
+          resumeText,
         }),
       });
 
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `Request failed: ${res.status}`);
-      }
+      const data = await response.json();
 
-      const data = await res.json();
-      // Expecting { text: "..." } from /api/chat
-      setOutput(data.text ?? JSON.stringify(data));
+      if (!response.ok) {
+        // if your API returns { error: "..." }
+        setErrorMsg(data?.error || "Something went wrong.");
+      } else if (data?.error) {
+        setErrorMsg(data.error);
+      } else {
+        setOutput(data?.result || "");
+      }
     } catch (err) {
-      setError(err.message || "Something went wrong");
+      setErrorMsg(err?.message || "Network error.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main
-      style={{
-        maxWidth: 900,
-        margin: "40px auto",
-        padding: 24,
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-      }}
-    >
-      <h1 style={{ marginBottom: 6 }}>AmplyAI — Resume Helper (DIY)</h1>
-      <p style={{ color: "#666", marginTop: 0 }}>
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
+      <h1 style={{ fontSize: 36, fontWeight: 800, marginBottom: 8 }}>
+        AmplyAI — Resume Helper (DIY)
+      </h1>
+      <p style={{ color: "#444", marginBottom: 24 }}>
         Paste your resume, pick a tone, and tell me the job role. I’ll rewrite it.
       </p>
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 16 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span>Job role you’re applying for</span>
-          <input
-            value={jobRole}
-            onChange={(e) => setJobRole(e.target.value)}
-            placeholder="e.g., Product Manager"
-            required
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #ccc",
-              borderRadius: 8,
-            }}
-          />
+      <form onSubmit={handleSubmit}>
+        {/* Job Role */}
+        <label style={{ fontWeight: 600, display: "block", marginBottom: 8 }}>
+          Job role you’re applying for
         </label>
+        <input
+          type="text"
+          value={jobRole}
+          onChange={(e) => setJobRole(e.target.value)}
+          placeholder="e.g., Software Engineer"
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid #ddd",
+            marginBottom: 18,
+          }}
+        />
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <span>Desired tone</span>
-          <select
-            value={tone}
-            onChange={(e) => setTone(e.target.value)}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #ccc",
-              borderRadius: 8,
-            }}
-          >
-            <option>Professional</option>
-            <option>Creative</option>
-            <option>Friendly</option>
-            <option>Straightforward</option>
-          </select>
+        {/* Tone */}
+        <label style={{ fontWeight: 600, display: "block", marginBottom: 8 }}>
+          Desired tone
         </label>
+        <select
+          value={tone}
+          onChange={(e) => setTone(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid #ddd",
+            marginBottom: 18,
+          }}
+        >
+          <option>Professional</option>
+          <option>Friendly</option>
+          <option>Confident</option>
+          <option>Concise</option>
+          <option>Enthusiastic</option>
+        </select>
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <span>Current resume text</span>
-          <textarea
-            value={resumeText}
-            onChange={(e) => setResumeText(e.target.value)}
-            placeholder="Paste your resume here…"
-            required
-            rows={12}
-            style={{
-              padding: 12,
-              border: "1px solid #ccc",
-              borderRadius: 8,
-              fontFamily: "inherit",
-            }}
-          />
+        {/* Resume Text */}
+        <label style={{ fontWeight: 600, display: "block", marginBottom: 8 }}>
+          Current resume text
         </label>
+        <textarea
+          value={resumeText}
+          onChange={(e) => setResumeText(e.target.value)}
+          rows={12}
+          placeholder="Paste the section you want improved…"
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid #ddd",
+            marginBottom: 18,
+            fontFamily: "inherit",
+          }}
+        />
 
         <button
           type="submit"
           disabled={loading}
           style={{
-            padding: "12px 16px",
-            border: "1px solid transparent",
-            background: "#111",
-            color: "#fff",
+            width: "100%",
+            padding: "14px 18px",
             borderRadius: 10,
+            background: "#000",
+            color: "#fff",
+            border: "none",
+            fontWeight: 700,
             cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading ? 0.6 : 1,
+            marginBottom: 16,
           }}
         >
           {loading ? "Rewriting…" : "Rewrite my resume"}
         </button>
       </form>
 
-      {error && (
+      {/* Error Message */}
+      {errorMsg ? (
         <div
           style={{
-            marginTop: 18,
-            padding: 12,
-            background: "#ffe8e8",
-            border: "1px solid #ffb3b3",
+            background: "#ffe6e6",
+            color: "#a30000",
+            border: "1px solid #ffc9c9",
+            padding: "12px 14px",
             borderRadius: 8,
-            color: "#b10000",
+            marginTop: 8,
           }}
         >
-          {error}
+          {errorMsg}
         </div>
-      )}
+      ) : null}
 
-      {output && (
-        <section style={{ marginTop: 24 }}>
-          <h2>Improved Resume</h2>
-          <textarea
-            readOnly
-            value={output}
-            rows={14}
-            style={{
-              width: "100%",
-              padding: 12,
-              border: "1px solid #ccc",
-              borderRadius: 8,
-              fontFamily: "inherit",
-            }}
-          />
-        </section>
-      )}
-    </main>
+      {/* Output */}
+      {output ? (
+        <div
+          style={{
+            background: "#f8f9fb",
+            border: "1px solid #e6e8ef",
+            padding: "16px 18px",
+            borderRadius: 8,
+            marginTop: 16,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {output}
+        </div>
+      ) : null}
+
+      {/* Small helper note */}
+      <p style={{ color: "#777", marginTop: 18, fontSize: 13 }}>
+        Tip: try tones like <em>Confident</em> or <em>Concise</em>, and be specific
+        about the role (e.g., “Frontend Engineer (React)”, “Backend Engineer (Node)”, etc.).
+      </p>
+    </div>
   );
 }
