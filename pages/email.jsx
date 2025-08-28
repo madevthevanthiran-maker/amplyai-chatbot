@@ -1,14 +1,7 @@
-// AmplyAI Email Composer — drop-in page component
-// Framework: Next.js (App Router or Pages works), TailwindCSS
-// Libraries: shadcn/ui optional (not required here); no external deps
-// Usage: place this file as app/email/page.tsx (App Router) or pages/email.tsx (Pages Router)
-// API route expected at /api/email (see below in this doc)
-
+// pages/email.jsx
 import React, { useMemo, useState } from "react";
 
-// --- UI PRIMITIVES (minimal to keep portable) ---
-const TabButton: React.FC<{ active: boolean; onClick: () => void; label: string }>
-  = ({ active, onClick, label }) => (
+const TabButton = ({ active, onClick, label }) => (
   <button
     onClick={onClick}
     className={
@@ -22,8 +15,7 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; label: string 
   </button>
 );
 
-const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }>
-  = ({ label, hint, children }) => (
+const Field = ({ label, hint, children }) => (
   <div className="space-y-2">
     <div className="flex items-baseline justify-between">
       <label className="text-sm font-semibold">{label}</label>
@@ -33,19 +25,16 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
   </div>
 );
 
-const Card: React.FC<{ title?: string; children: React.ReactNode }>
-  = ({ title, children }) => (
+const Card = ({ title, children }) => (
   <div className="rounded-2xl border border-gray-200 p-5 shadow-sm bg-white">
     {title && <h3 className="text-base font-semibold mb-3">{title}</h3>}
     {children}
   </div>
 );
 
-// --- PAGE COMPONENT ---
-export default function EmailComposerPage() {
+export default function MailMatePage() {
   const [tab, setTab] = useState("Intent");
 
-  // Form state
   const [intent, setIntent] = useState("Cold outreach");
   const [recipient, setRecipient] = useState("Hiring Manager");
   const [goal, setGoal] = useState("Request a 15-min intro call about the role");
@@ -69,16 +58,26 @@ export default function EmailComposerPage() {
   );
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{
-    subjects: string[];
-    versions: string[];
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
 
-  const tabs = ["Intent", "Context", "Style", "Review", "Output"] as const;
+  const tabs = ["Intent", "Context", "Style", "Review", "Output"];
 
   const previewPrompt = useMemo(() => {
-    return `Compose an email.\nIntent: ${intent}\nPrimary recipient: ${recipient}\nGoal: ${goal}\n\nContext: ${context}\nSpecifics: ${details}\n\nTone & length: ${tone}; ${length}\nSignature to use:\n${signature}\n\nConstraints: ${constraints}\nReturn JSON with keys subjects (array of 3) and versions (array of 2).`;
+    return `Compose an email.
+Intent: ${intent}
+Primary recipient: ${recipient}
+Goal: ${goal}
+
+Context: ${context}
+Specifics: ${details}
+
+Tone & length: ${tone}; ${length}
+Signature to use:
+${signature}
+
+Constraints: ${constraints}
+Return JSON with keys subjects (array of 3) and versions (array of 2).`;
   }, [intent, recipient, goal, context, details, tone, length, signature, constraints]);
 
   const handleGenerate = async () => {
@@ -105,8 +104,8 @@ export default function EmailComposerPage() {
       const data = await res.json();
       setResult(data);
       setTab("Output");
-    } catch (e: any) {
-      setError(e.message ?? "Something went wrong");
+    } catch (e) {
+      setError(e.message || "Something went wrong");
       setTab("Output");
     } finally {
       setLoading(false);
@@ -117,8 +116,10 @@ export default function EmailComposerPage() {
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">AmplyAI — Mail Mate</h1>
-          <p className="text-gray-600 text-sm">Turn intent → crisp email with A/B variants + subject lines.</p>
+          <h1 className="text-2xl font-bold">AmplyAI — MailMate</h1>
+          <p className="text-gray-600 text-sm">
+            Turn intent → crisp email with A/B variants + subject lines.
+          </p>
         </div>
         <div className="flex gap-2">
           {tabs.map((t) => (
@@ -127,7 +128,6 @@ export default function EmailComposerPage() {
         </div>
       </header>
 
-      {/* GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
           {tab === "Intent" && (
@@ -194,7 +194,9 @@ export default function EmailComposerPage() {
         <div className="space-y-4">
           <Card title="Live Preview">
             <div className="prose max-w-none">
-              <p className="text-sm text-gray-600">This mirrors your inputs. Click <span className="font-semibold">Generate</span> on Review to get model-written drafts.</p>
+              <p className="text-sm text-gray-600">
+                This mirrors your inputs. Click <span className="font-semibold">Generate</span> on Review to get model-written drafts.
+              </p>
               <hr className="my-3" />
               <p className="text-xs text-gray-500">To: {recipient}</p>
               <p className="text-xs text-gray-500">Intent: {intent} • Goal: {goal}</p>
@@ -209,20 +211,18 @@ export default function EmailComposerPage() {
           </Card>
 
           <Card title="Output">
-            {error && (
-              <div className="text-sm text-red-600">{error}</div>
-            )}
+            {error && <div className="text-sm text-red-600">{error}</div>}
             {!result && !error && (
-              <div className="text-sm text-gray-500">No output yet. Go to <strong>Review</strong> and click <strong>Generate</strong>.</div>
+              <div className="text-sm text-gray-500">
+                No output yet. Go to <strong>Review</strong> and click <strong>Generate</strong>.
+              </div>
             )}
             {result && (
               <div className="space-y-4">
                 <div>
                   <h4 className="font-semibold">Subject ideas</h4>
                   <ul className="list-disc pl-5 text-sm">
-                    {result.subjects.map((s, i) => (
-                      <li key={i}>{s}</li>
-                    ))}
+                    {result.subjects.map((s, i) => <li key={i}>{s}</li>)}
                   </ul>
                 </div>
                 <div className="space-y-6">
@@ -241,54 +241,3 @@ export default function EmailComposerPage() {
     </div>
   );
 }
-
-// ---------------- API ROUTE (Next.js App Router) ----------------
-// Create file at app/api/email/route.ts
-// If you're on Pages Router, use pages/api/email.ts with the same handler logic.
-
-// Below is the handler code (TypeScript). Copy to app/api/email/route.ts
-// ---------------------------------------------------------------
-/*
-import { NextRequest, NextResponse } from "next/server";
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const {
-      intent, recipient, goal, context, details,
-      tone, length, signature, constraints,
-    } = body;
-
-    // --- Compose a robust system + user prompt ---
-    const sys = `You are AmplyAI's Email Composer. Write crisp, high-converting emails. Return JSON only.`;
-    const user = `Compose an email based on the following inputs.\nIntent: ${intent}\nRecipient: ${recipient}\nGoal: ${goal}\nContext: ${context}\nDetails: ${details}\nTone: ${tone}\nLength: ${length}\nSignature: ${signature}\nConstraints: ${constraints}\nReturn JSON with keys \'subjects\' (3 strings) and \'versions\' (2 strings).`;
-
-    // --- Call your model provider (OpenAI, etc.) ---
-    // Example with OpenAI Responses API (Node 18+). Replace with your provider if needed.
-    // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    // const completion = await openai.chat.completions.create({
-    //   model: "gpt-4o-mini",
-    //   messages: [ { role: "system", content: sys }, { role: "user", content: user } ],
-    //   response_format: { type: "json_object" },
-    // });
-    // const json = JSON.parse(completion.choices[0].message.content ?? "{}");
-
-    // --- Temporary mock (so page works without a key) ---
-    const json = {
-      subjects: [
-        "Quick intro: AmplyAI + a 15‑min idea",
-        "Exploring the Product Marketing Intern role",
-        "Could we connect this week?"
-      ],
-      versions: [
-        `Hi ${recipient},\n\nI’m building AmplyAI and wanted to quickly introduce myself. ${goal}.\n\n${context}\n${details}\n\nIf it’s helpful, I can share a one‑pager beforehand. Does Tue 3–5pm SGT work?\n\n${signature}`,
-        `Hello ${recipient},\n\nReaching out about the role — short version: ${goal}.\n\n${context}\n${details}\n\nHappy to adapt if there’s a better time.\n\n${signature}`,
-      ],
-    };
-
-    return NextResponse.json(json);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "Unknown error" }, { status: 500 });
-  }
-}
-*/
