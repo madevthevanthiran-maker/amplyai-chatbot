@@ -94,7 +94,7 @@ export default function Home() {
   return (
     <div className="page">
       <main className="container">
-        <h1 className="title">AmplyAI — Resume Helper (DIY)</h1>
+        <h1 className="title">AmplyAI — Resume Helper</h1>
         <p className="subtitle">
           Paste your resume, choose a layout, and tell me the job role. I’ll
           restructure and improve it.
