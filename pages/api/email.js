@@ -9,21 +9,14 @@ export default async function handler(req, res) {
 
   try {
     const {
-      intent = "",
-      recipient = "",
-      goal = "",
-      context = "",
-      details = "",
-      tone = "",
-      length = "",
-      signature = "",
-      constraints = "",
+      intent = "", recipient = "", goal = "",
+      context = "", details = "",
+      tone = "", length = "",
+      signature = "", constraints = "",
     } = req.body || {};
 
     if (!intent.trim() || !recipient.trim() || !goal.trim()) {
-      return res
-        .status(400)
-        .json({ error: "Please include at least intent, recipient, and goal." });
+      return res.status(400).json({ error: "Please include at least intent, recipient, and goal." });
     }
 
     const system =
@@ -70,12 +63,10 @@ Constraints: ${constraints}`;
     const content = data?.choices?.[0]?.message?.content || "{}";
     const json = JSON.parse(content);
 
-    const payload = {
+    return res.status(200).json({
       subjects: Array.isArray(json.subjects) ? json.subjects.slice(0, 3) : [],
       versions: Array.isArray(json.versions) ? json.versions.slice(0, 2) : [],
-    };
-
-    return res.status(200).json(payload);
+    });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "Unknown error" });
   }
