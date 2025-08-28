@@ -1,260 +1,328 @@
 // pages/index.js
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 export default function Home() {
   const [jobRole, setJobRole] = useState("");
-  const [tone, setTone] = useState("Professional");
+  const [layout, setLayout] = useState("chronological");
+  const [tone, setTone] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [resumeText, setResumeText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [error, setError] = useState("");
   const [output, setOutput] = useState("");
 
-  async function handleSubmit(e) {
+  const layoutOptions = useMemo(
+    () => [
+      {
+        value: "chronological",
+        label: "Chronological (standard)",
+        blurb:
+          "Most common. Work experience listed from most recent. Great if you have consistent experience."
+      },
+      {
+        value: "functional",
+        label: "Functional / Skills-based",
+        blurb:
+          "Highlights skill groups before employment history. Good for career pivots or limited experience."
+      },
+      {
+        value: "combination",
+        label: "Combination (skills + chronology)",
+        blurb:
+          "Top skills summary + detailed work history. Nice balance for experienced candidates."
+      },
+      {
+        value: "academic_cv",
+        label: "Academic CV",
+        blurb:
+          "Research, publications, conferences, teaching, grants. Use for academic roles."
+      }
+    ],
+    []
+  );
+
+  const currentLayoutBlurb = useMemo(
+    () => layoutOptions.find((o) => o.value === layout)?.blurb || "",
+    [layout, layoutOptions]
+  );
+
+  async function onSubmit(e) {
     e.preventDefault();
-    setErrorMsg("");
+    setError("");
     setOutput("");
+    if (!jobRole.trim() || !resumeText.trim()) {
+      setError("Please enter the job role and provide some resume content.");
+      return;
+    }
     setLoading(true);
 
     try {
+      // Update your /api/chat to read `layout` and (optionally) `tone`.
+      // Example server-side shape you can expect:
+      // { job_role, layout, tone (optional), resume_text }
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          jobRole: jobRole.trim(),
-          tone,
-          resumeText: resumeText.trim(),
-        }),
+          job_role: jobRole,
+          layout,
+          // only include tone if user chose one
+          ...(tone ? { tone } : {}),
+          resume_text: resumeText
+        })
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(
-          data?.error ||
-            `Request failed with status ${res.status} ${res.statusText}`
-        );
+        const msg = await res.text();
+        throw new Error(msg || "Request failed");
       }
-
-      const data = await res.json();
-      // Accept either { content: "..."} or { message: "..."} or raw text
-      const text =
-        data?.content || data?.message || (typeof data === "string" ? data : "");
-      setOutput(text);
+      const data = await res.json().catch(() => null);
+      // Support either {result: "..."} JSON or raw text
+      const text = data?.result ?? (await res.text());
+      setOutput(text || "No content returned.");
     } catch (err) {
-      setErrorMsg(err.message || "Something went wrong.");
+      setError(
+        err?.message ||
+          "Something went wrong. Please try again or check server logs."
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main
-      style={{
-        maxWidth: 1100,
-        margin: "0 auto",
-        padding: "32px 20px 56px",
-        lineHeight: 1.5,
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"',
-      }}
-    >
-      <h1 style={{ fontSize: 36, fontWeight: 800, marginBottom: 12 }}>
-        AmplyAI — Resume Helper (DIY)
-      </h1>
-      <p style={{ marginBottom: 28, color: "#444" }}>
-        Paste your resume, pick a tone, and tell me the job role. I’ll rewrite
-        it.
-      </p>
+    <div className="page">
+      <main className="container">
+        <h1 className="title">AmplyAI — Resume Helper (DIY)</h1>
+        <p className="subtitle">
+          Paste your resume, choose a layout, and tell me the job role. I’ll
+          restructure and improve it.
+        </p>
 
-      <form onSubmit={handleSubmit} style={{ marginBottom: 24 }}>
-        {/* Job role */}
-        <div style={{ marginBottom: 18 }}>
-          <label
-            htmlFor="job-role"
-            style={{ display: "block", fontWeight: 700, marginBottom: 6 }}
-          >
-            Job role you’re applying for
-          </label>
+        <form onSubmit={onSubmit} className="card">
+          {/* Job role */}
+          <label className="label">Job role you’re applying for</label>
           <input
-            id="job-role"
-            type="text"
-            placeholder="e.g., Software Engineer"
+            className="input"
+            placeholder="e.g., Software Engineer, Marketing Manager, Registered Nurse"
             value={jobRole}
             onChange={(e) => setJobRole(e.target.value)}
-            required
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              outline: "none",
-              fontSize: 16,
-            }}
           />
-        </div>
 
-        {/* Desired tone */}
-        <div style={{ marginBottom: 18 }}>
-          <label
-            htmlFor="tone"
-            style={{ display: "block", fontWeight: 700, marginBottom: 6 }}
-          >
-            Desired tone
-          </label>
-          <select
-            id="tone"
-            value={tone}
-            onChange={(e) => setTone(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              outline: "none",
-              fontSize: 16,
-              background: "#fff",
-            }}
-          >
-            <option>Professional</option>
-            <option>Friendly</option>
-            <option>Confident</option>
-            <option>Concise</option>
-            <option>Creative</option>
-            <option>Straightforward</option>
-          </select>
-        </div>
+          {/* Desired layout (primary) */}
+          <div className="row">
+            <div className="col">
+              <label className="label">Desired layout</label>
+              <select
+                className="input"
+                value={layout}
+                onChange={(e) => setLayout(e.target.value)}
+              >
+                {layoutOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-        {/* Current resume text + instruction block */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <label
-              htmlFor="resume-text"
-              style={{ fontWeight: 800, fontSize: 26 }}
+          {/* Layout blurb */}
+          <p className="hint">{currentLayoutBlurb}</p>
+
+          {/* Optional: Tone (advanced) */}
+          <details
+            className="details"
+            open={showAdvanced}
+            onToggle={(e) => setShowAdvanced(e.currentTarget.open)}
+          >
+            <summary className="detailsSummary">Advanced (optional): Tone</summary>
+            <p className="hint">
+              Choose a writing tone if you want the output to “sound” a certain
+              way. Otherwise I’ll default to clear, professional language.
+            </p>
+            <select
+              className="input inline"
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
             >
-              Current resume text
-            </label>
-          </div>
+              <option value="">No specific tone</option>
+              <option value="professional">Professional</option>
+              <option value="confident">Confident</option>
+              <option value="concise">Concise</option>
+              <option value="friendly">Friendly</option>
+            </select>
+          </details>
 
-          {/* Instruction block */}
-          <div
-            style={{
-              marginTop: 8,
-              marginBottom: 10,
-              color: "#555",
-              fontSize: 14,
-              background: "#fafafa",
-              border: "1px solid #eee",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          >
-            Please provide as much of the following as possible (you can paste
-            an existing resume or type details):
-            <ul style={{ marginTop: 6, marginBottom: 6, paddingLeft: 20 }}>
-              <li>
-                <strong>Work experience</strong> — organisation, position,
-                last-drawn salary, job description, length of employment, reason
-                for leaving
-              </li>
-              <li>
-                <strong>Education</strong> — school, degree, field of study,
-                dates, achievements
-              </li>
-              <li>
-                <strong>Certifications</strong> — name, issuer, date/expiry
-              </li>
-              <li>
-                <strong>Skills &amp; achievements</strong>
-              </li>
-              <li>
-                <strong>Referees</strong> (at least 2) — name, position,
-                company, contact, relationship
-              </li>
-              <li>
-                <strong>Hobbies / Interests</strong>
-              </li>
-            </ul>
-            If some sections don’t apply, feel free to leave them out.
-          </div>
-
+          {/* Resume text */}
+          <label className="label withTop">Current resume text</label>
           <textarea
-            id="resume-text"
-            placeholder="Paste your current resume text or details here…"
+            className="textarea"
+            rows={14}
+            placeholder={`Paste the section you want improved…
+
+To get the best result, include as much as you can from the following:
+
+• Work Experience — organisation names, city/country, position held, last drawn salary (optional), key responsibilities, quantifiable achievements, length of employment (MM/YYYY – MM/YYYY), reason for leaving (optional)
+• Education — school/college/university, program/degree, graduation year, notable coursework/honours
+• Certifications — name, issuer, year, credential ID/url (if any)
+• Skills — technical, tools, frameworks, languages, soft skills
+• Projects — name, brief description, role, outcomes/metrics, link (optional)
+• Awards — name, issuer, year
+• Referees — name, title, organisation, email/phone (share only if you’re comfortable)
+• Hobbies / Interests — what you enjoy in your free time (optional)
+
+If you don’t have some of these, leave them out. I’ll keep placeholders or structure around what you provide.`}
             value={resumeText}
             onChange={(e) => setResumeText(e.target.value)}
-            required
-            style={{
-              width: "100%",
-              minHeight: 220,
-              padding: "14px 16px",
-              borderRadius: 12,
-              border: "1px solid #bbb",
-              outline: "none",
-              fontSize: 16,
-              resize: "vertical",
-              boxShadow:
-                "inset 0 1px 0 rgba(0,0,0,0.03), 0 0 0 rgba(0,0,0,0)",
-            }}
           />
-        </div>
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: "100%",
-            padding: "14px 18px",
-            borderRadius: 12,
-            border: "none",
-            background: "#111",
-            color: "#fff",
-            fontSize: 18,
-            fontWeight: 700,
-            cursor: loading ? "not-allowed" : "pointer",
-          }}
-        >
-          {loading ? "Rewriting…" : "Rewrite my resume"}
-        </button>
-      </form>
+          {/* Actions */}
+          <button className="button" type="submit" disabled={loading}>
+            {loading ? "Rewriting…" : "Rewrite my resume"}
+          </button>
 
-      {/* Error */}
-      {errorMsg && (
-        <div
-          style={{
-            background: "#ffecec",
-            border: "1px solid #f5c2c7",
-            color: "#b02a37",
-            padding: "12px 14px",
-            borderRadius: 10,
-            marginTop: 12,
-          }}
-        >
-          {errorMsg}
-        </div>
-      )}
+          {/* Errors */}
+          {error ? <div className="error">{error}</div> : null}
+        </form>
 
-      {/* Output */}
-      {output && (
-        <div
-          style={{
-            marginTop: 18,
-            background: "#f7f7f7",
-            border: "1px solid #e5e5e5",
-            padding: "18px 20px",
-            borderRadius: 12,
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {output}
-        </div>
-      )}
+        {/* Output */}
+        {output && (
+          <div className="card output">
+            <pre className="pre">{output}</pre>
+          </div>
+        )}
 
-      {/* Tiny tip */}
-      <p style={{ marginTop: 20, color: "#777", fontSize: 13 }}>
-        Tip: try tones like <em>Confident</em> or <em>Concise</em>, and be
-        specific about the role (e.g., “Frontend Engineer (React)”, “Backend
-        Engineer (Node)”, etc.).
-      </p>
-    </main>
+        <p className="tinyTip">
+          Tip: You can change the layout above to switch between chronological,
+          functional, or combination structures without retyping your content.
+        </p>
+      </main>
+
+      <style jsx>{`
+        .page {
+          padding: 24px;
+          background: #f8fafc;
+          min-height: 100vh;
+        }
+        .container {
+          max-width: 960px;
+          margin: 0 auto;
+        }
+        .title {
+          margin: 0 0 4px;
+          font-size: 36px;
+          letter-spacing: 0.2px;
+        }
+        .subtitle {
+          margin: 0 0 24px;
+          color: #475569;
+        }
+        .card {
+          background: #fff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 20px;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+          margin-bottom: 16px;
+        }
+        .label {
+          font-weight: 600;
+          margin: 14px 0 8px;
+          display: block;
+        }
+        .withTop {
+          margin-top: 18px;
+        }
+        .input {
+          width: 100%;
+          padding: 10px 12px;
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          background: #fff;
+          outline: none;
+        }
+        .input:focus,
+        .textarea:focus,
+        .inline:focus {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        .textarea {
+          width: 100%;
+          padding: 12px;
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
+          resize: vertical;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+            "Liberation Mono", "Courier New", monospace;
+          line-height: 1.45;
+          background: #fff;
+        }
+        .row {
+          display: flex;
+          gap: 12px;
+        }
+        .col {
+          flex: 1;
+        }
+        .hint {
+          color: #64748b;
+          margin: 8px 2px 12px;
+          font-size: 14px;
+        }
+        .details {
+          margin: 6px 0 10px;
+          border: 1px dashed #e2e8f0;
+          border-radius: 10px;
+          padding: 10px 12px;
+          background: #fafafa;
+        }
+        .detailsSummary {
+          cursor: pointer;
+          font-weight: 600;
+        }
+        .inline {
+          max-width: 320px;
+        }
+        .button {
+          width: 100%;
+          margin-top: 14px;
+          padding: 12px 16px;
+          border: none;
+          border-radius: 12px;
+          background: #111827;
+          color: #fff;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .button[disabled] {
+          opacity: 0.7;
+          cursor: default;
+        }
+        .error {
+          margin-top: 10px;
+          padding: 10px 12px;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          color: #b91c1c;
+          border-radius: 10px;
+          font-size: 14px;
+        }
+        .output {
+          white-space: pre-wrap;
+        }
+        .pre {
+          margin: 0;
+          white-space: pre-wrap;
+        }
+        .tinyTip {
+          color: #64748b;
+          font-size: 13px;
+          margin-top: 6px;
+        }
+      `}</style>
+    </div>
   );
 }
