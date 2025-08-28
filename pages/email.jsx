@@ -1,6 +1,16 @@
 // pages/email.jsx
 import React, { useMemo, useState } from "react";
 
+// Copy-to-clipboard helper
+const copy = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Copied!");
+  } catch {
+    alert("Copy failed");
+  }
+};
+
 const TabButton = ({ active, onClick, label }) => (
   <button
     onClick={onClick}
@@ -81,6 +91,12 @@ Return JSON with keys subjects (array of 3) and versions (array of 2).`;
   }, [intent, recipient, goal, context, details, tone, length, signature, constraints]);
 
   const handleGenerate = async () => {
+    // Basic validation
+    if (!intent.trim() || !recipient.trim() || !goal.trim()) {
+      alert("Please fill at least Intent, Recipient, and Goal.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -222,7 +238,11 @@ Return JSON with keys subjects (array of 3) and versions (array of 2).`;
                 <div>
                   <h4 className="font-semibold">Subject ideas</h4>
                   <ul className="list-disc pl-5 text-sm">
-                    {result.subjects.map((s, i) => <li key={i}>{s}</li>)}
+                    {result.subjects.map((s, i) => (
+                      <li key={i}>
+                        <button onClick={() => copy(s)} className="underline">{s}</button>
+                      </li>
+                    ))}
                   </ul>
                 </div>
                 <div className="space-y-6">
@@ -230,6 +250,25 @@ Return JSON with keys subjects (array of 3) and versions (array of 2).`;
                     <div key={i} className="border rounded-xl p-4 bg-gray-50">
                       <div className="text-xs text-gray-500 mb-2">Version {i + 1}</div>
                       <pre className="whitespace-pre-wrap text-sm">{v}</pre>
+
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => copy(v)}
+                          className="px-3 py-2 border rounded-lg text-sm"
+                        >
+                          Copy
+                        </button>
+                        <a
+                          href={`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(
+                            (result.subjects && result.subjects[0]) || "Quick intro"
+                          )}&body=${encodeURIComponent(v)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 border rounded-lg text-sm"
+                        >
+                          Open in Gmail
+                        </a>
+                      </div>
                     </div>
                   ))}
                 </div>
