@@ -1,10 +1,13 @@
 /* styles/globals.css */
-
-html, body, #__next {
-  height: 100%;
+/* keep it simple; adjust as you like */
+html, body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: #fff;
+  color: #111;
 }
 
 * { box-sizing: border-box; }
+
+a { color: inherit; text-decoration: none; }
