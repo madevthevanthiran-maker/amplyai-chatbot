@@ -1,43 +1,51 @@
 // pages/index.jsx
 import Link from "next/link";
 
+function Row({ emoji, children }) {
+  return (
+    <li>
+      <span style={{ fontSize: 20 }}>{emoji}</span>
+      <div>{children}</div>
+    </li>
+  );
+}
+
 export default function Home() {
   return (
-    <div className="container">
+    <main className="container">
       <header className="topbar">
-        <h1>
-          AmplyAI — <span className="brand">Progress Partner</span>
-        </h1>
+        <h1>AmplyAI — Progress Partner</h1>
       </header>
 
-      <div className="chatbox">
-        <p>Hey! I’m your Progress Partner. What do you want to do today?</p>
-        <ul>
-          <li>
-            <Link href="/email">✉️ Write a great email (MailMate)</Link>
-          </li>
-          <li>
-            <Link href="/resume">📄 Build/refresh your resume (HireHelper)</Link>
-          </li>
-          <li>💬 Or just ask me questions here.</li>
-        </ul>
-      </div>
+      <section className="card">
+        <p style={{ marginTop: 0, marginBottom: 16, fontSize: 18 }}>
+          Hey! I’m your <strong>Progress Partner</strong>. What do you want to
+          do today?
+        </p>
 
-      <style jsx>{`
-        .container { max-width: 700px; margin: 40px auto; padding: 0 16px; }
-        .topbar { margin-bottom: 16px; }
-        .brand { color: #1e293b; }
-        .chatbox {
-          background: #f8fafc;
-          border: 1px solid #e5e7eb;
-          border-radius: 12px;
-          padding: 20px;
-        }
-        ul { margin: 12px 0 0; padding-left: 20px; }
-        li { margin-bottom: 8px; }
-        a { text-decoration: none; color: #0070f3; }
-        a:hover { text-decoration: underline; }
-      `}</style>
-    </div>
+        <ul className="choices">
+          <Row emoji="✉️">
+            <Link href="/email">Write a great email (MailMate)</Link>
+            <div style={{ color: "#64748b", fontSize: 14 }}>
+              Compose crisp outreach, follow-ups, or updates in seconds.
+            </div>
+          </Row>
+
+          <Row emoji="📄">
+            <Link href="/hire-helper">Build/refresh your resume (HireHelper)</Link>
+            <div style={{ color: "#64748b", fontSize: 14 }}>
+              Pick a layout, add roles, and let AI polish the draft.
+            </div>
+          </Row>
+
+          <Row emoji="💬">
+            <span>Or just ask me questions here.</span>
+            <div style={{ color: "#64748b", fontSize: 14 }}>
+              (Q&A chat coming next — we’ll plug it in soon.)
+            </div>
+          </Row>
+        </ul>
+      </section>
+    </main>
   );
 }
