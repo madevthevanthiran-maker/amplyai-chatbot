@@ -1,86 +1,10 @@
 /* styles/globals.css */
 
-/* Reset-ish */
-*, *::before, *::after { box-sizing: border-box; }
-html, body { height: 100%; }
-body {
+html, body, #__next {
+  height: 100%;
   margin: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  padding: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  color: #111827;            /* neutral-900 */
-  background: #ffffff;
 }
 
-/* Basic typography */
-h1, h2, h3, h4, h5, h6 { margin: 0 0 .5rem; line-height: 1.2; }
-p { margin: 0 0 1rem; }
-
-/* Links */
-a { color: #2563eb; text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-/* Forms */
-input, textarea, select, button {
-  font: inherit;
-}
-input, textarea, select {
-  width: 100%;
-  padding: .6rem .75rem;
-  border: 1px solid #e5e7eb; /* neutral-200 */
-  border-radius: .5rem;
-  background: #fff;
-}
-input:focus, textarea:focus, select:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
-}
-
-button {
-  display: inline-flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .6rem .9rem;
-  border: 1px solid #1d4ed8;
-  background: #2563eb;
-  color: #fff;
-  border-radius: .5rem;
-  cursor: pointer;
-}
-button:hover { background: #1d4ed8; }
-
-/* Utility-ish spacing for simple layouts */
-.container {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-.card {
-  border: 1px solid #e5e7eb;
-  border-radius: .75rem;
-  padding: 1rem;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
-}
-
-.tabs {
-  display: flex;
-  gap: .5rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-.tab {
-  padding: .4rem .75rem;
-  border: 1px solid #e5e7eb;
-  border-radius: .5rem;
-  background: #f9fafb;
-  cursor: pointer;
-}
-.tab.active {
-  background: #2563eb;
-  color: #fff;
-  border-color: #2563eb;
-}
+* { box-sizing: border-box; }
