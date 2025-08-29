@@ -1,5 +1,5 @@
-// pages/api/chat.js
-// Generic chat endpoint (no SDK; uses fetch)
+// pages/api/email.js
+// MailMate — AI Email Composer (no SDK; uses fetch)
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -8,10 +8,42 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages = [] } = req.body || {};
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "Provide messages: [{ role, content }, ...]" });
+    const {
+      intent = "",
+      recipient = "",
+      goal = "",
+      context = "",
+      details = "",
+      tone = "",
+      length = "",
+      signature = "",
+      constraints = "",
+    } = req.body || {};
+
+    // Basic guardrails (avoid wasting tokens)
+    if (!intent.trim() || !recipient.trim() || !goal.trim()) {
+      return res
+        .status(400)
+        .json({ error: "Please include at least intent, recipient, and goal." });
     }
+
+    const system =
+      "You are AmplyAI's MailMate. Write crisp, high-converting emails. Respond ONLY with valid JSON.";
+    const user = `Compose an email based on the inputs below.
+Return JSON with keys "subjects" (array of 3 strings) and "versions" (array of 2 strings).
+
+Inputs:
+Intent: ${intent}
+Recipient: ${recipient}
+Goal: ${goal}
+
+Context: ${context}
+Details: ${details}
+
+Tone: ${tone}
+Length: ${length}
+Signature: ${signature}
+Constraints: ${constraints}`;
 
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -21,7 +53,11 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        response_format: { type: "json_object" },
         temperature: 0.7,
       }),
     });
@@ -32,8 +68,22 @@ export default async function handler(req, res) {
     }
 
     const data = await r.json();
-    const content = data?.choices?.[0]?.message?.content || "";
-    return res.status(200).json({ content });
+    const content = data?.choices?.[0]?.message?.content || "{}";
+
+    // Parse and enforce shape
+    let parsed = {};
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return res.status(500).json({ error: "Model did not return valid JSON." });
+    }
+
+    const payload = {
+      subjects: Array.isArray(parsed.subjects) ? parsed.subjects.slice(0, 3) : [],
+      versions: Array.isArray(parsed.versions) ? parsed.versions.slice(0, 2) : [],
+    };
+
+    return res.status(200).json(payload);
   } catch (e) {
     return res.status(500).json({ error: e?.message || "Unknown error" });
   }
