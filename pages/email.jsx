@@ -1,238 +1,140 @@
-import { useMemo, useState } from "react";
+// /pages/email.jsx
+import { useState } from "react";
+import Link from "next/link";
 
 export default function MailMate() {
-  // form state
-  const [intent, setIntent] = useState("Cold outreach");
-  const [recipient, setRecipient] = useState("Hiring Manager");
-  const [goal, setGoal] = useState("Request a 15-min intro call");
-
-  const [context, setContext] = useState(
-    "I'm a sophomore building AmplyAI. We shipped an MVP and have traffic from PH."
-  );
-  const [details, setDetails] = useState(
-    "Job: Product Marketing Intern at Glide. My strengths: copy, tooling, short-form."
-  );
-
-  const [tone, setTone] = useState("Concise, confident, friendly");
-  const [length, setLength] = useState("120-160 words");
-  const [signature, setSignature] = useState(
-    `Madev Thevan\nFounder, AmplyAI\nwww.amplyai.org  |  madev@amplyai.org`
-  );
-  const [constraints, setConstraints] = useState(
-    "No fluff. Clear CTA. Subject line options. Two variants: A/B."
-  );
+  const [form, setForm] = useState({
+    intent: "Cold outreach",
+    recipient: "Hiring Manager",
+    goal: "Request a 15-min intro call",
+    context:
+      "I'm a sophomore building AmplyAI. We shipped an MVP and have traffic from PH.",
+    details:
+      "Job: Product Marketing Intern at Glide. My strengths: copy, tooling, short-form.",
+    tone: "Concise, confident, friendly",
+    signature: "Madev Thevan\nFounder, AmplyAI\nwww.amplyai.org | madev@amplyai.org",
+  });
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [subjects, setSubjects] = useState([]);
-  const [versions, setVersions] = useState([]); // two strings
+  const [versions, setVersions] = useState([]);
 
-  // live preview text block
-  const preview = useMemo(() => {
-    return [
-      `To: ${recipient}`,
-      "",
-      `Intent: ${intent} • Goal: ${goal}`,
-      "",
-      `Context: ${context}`,
-      "",
-      `Details: ${details}`,
-      "",
-      `Tone: ${tone} • Length: ${length}`,
-      "",
-      signature,
-      "",
-      `Constraints: ${constraints}`,
-    ].join("\n");
-  }, [intent, recipient, goal, context, details, tone, length, signature, constraints]);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  async function handleGenerate() {
+  async function generate() {
     setLoading(true);
-    setError("");
     setSubjects([]);
     setVersions([]);
-
     try {
-      const res = await fetch("/api/email", {
+      const r = await fetch("/api/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          intent,
-          recipient,
-          goal,
-          context,
-          details,
-          tone,
-          length,
-          signature,
-          constraints,
-        }),
+        body: JSON.stringify(form),
       });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Request failed");
-      }
-
-      const data = await res.json();
-      // Expect: { subjects: string[], versions: string[] }
-      setSubjects(Array.isArray(data.subjects) ? data.subjects.slice(0, 3) : []);
-      setVersions(Array.isArray(data.versions) ? data.versions.slice(0, 2) : []);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Failed");
+      setSubjects(data.subjects || []);
+      setVersions(data.versions || []);
     } catch (e) {
-      setError(e.message || "Something went wrong");
+      alert(e.message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl sm:text-2xl font-bold">
-            AmplyAI — <span className="text-indigo-600">MailMate</span>
-          </h1>
-          <a
-            href="/"
-            className="text-sm text-neutral-600 hover:text-neutral-900 transition"
-          >
-            ← Resume Helper
-          </a>
-        </div>
+    <div className="container">
+      <header className="topbar">
+        <Link href="/" className="back">&larr; Resume Helper</Link>
+        <h1>
+          <span className="brand">AmplyAI</span> — <span>MailMate</span>
+        </h1>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6 grid gap-6 lg:grid-cols-2">
-        {/* Left: Form */}
-        <section className="space-y-6">
-          <Card title="Intent & Target">
-            <Field label="Email intent (e.g., Cold outreach, Follow-up, Request, Update)">
-              <Input value={intent} onChange={setIntent} placeholder="Cold outreach" />
-            </Field>
-            <Field label="Recipient (Who are you writing to?)">
-              <Input value={recipient} onChange={setRecipient} placeholder="Hiring Manager" />
-            </Field>
-            <Field label="Goal (One clear call-to-action)">
-              <Input value={goal} onChange={setGoal} placeholder="Request a 15-min intro call" />
-            </Field>
-          </Card>
+      <div className="grid">
+        {/* Left form */}
+        <section className="card">
+          <h2>Intent & Target</h2>
 
-          <Card title="Context & Style">
-            <Field label="Context">
-              <Textarea value={context} onChange={setContext} rows={3} />
-            </Field>
-            <Field label="Details">
-              <Textarea value={details} onChange={setDetails} rows={3} />
-            </Field>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Tone">
-                <Input value={tone} onChange={setTone} placeholder="Concise, confident, friendly" />
-              </Field>
-              <Field label="Length">
-                <Input value={length} onChange={setLength} placeholder="120-160 words" />
-              </Field>
-            </div>
-            <Field label="Signature">
-              <Textarea value={signature} onChange={setSignature} rows={3} />
-            </Field>
-            <Field label="Constraints">
-              <Input value={constraints} onChange={setConstraints} placeholder="No fluff. Clear CTA…" />
-            </Field>
+          <label> Email intent (e.g., Cold outreach, Follow-up, Request, Update) </label>
+          <input value={form.intent} onChange={set("intent")} />
 
-            <div className="pt-2 flex items-center gap-3">
-              <button
-                onClick={handleGenerate}
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-60"
-              >
-                {loading ? Spinner : null}
-                {loading ? "Generating…" : "Generate"}
-              </button>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-            </div>
-          </Card>
+          <label> Recipient (Who are you writing to?) </label>
+          <input value={form.recipient} onChange={set("recipient")} />
+
+          <label> Goal (One clear call-to-action) </label>
+          <input value={form.goal} onChange={set("goal")} />
+
+          <h2>Context & Style</h2>
+
+          <label> Context </label>
+          <textarea rows={3} value={form.context} onChange={set("context")} />
+
+          <label> Details </label>
+          <textarea rows={3} value={form.details} onChange={set("details")} />
+
+          <label> Tone </label>
+          <input value={form.tone} onChange={set("tone")} />
+
+          <label> Signature </label>
+          <textarea rows={2} value={form.signature} onChange={set("signature")} />
+
+          <button className="primary" onClick={generate} disabled={loading}>
+            {loading ? "Generating…" : "Review → Generate"}
+          </button>
         </section>
 
-        {/* Right: Preview & Output */}
-        <section className="space-y-6">
-          <Card title="Live Preview">
-            <pre className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-800">
-              {preview}
-            </pre>
-          </Card>
+        {/* Right preview */}
+        <section className="card">
+          <h2>Live Preview</h2>
+          <div className="preview">
+            <p><strong>To:</strong> {form.recipient}</p>
+            <p>
+              <strong>Intent:</strong> {form.intent} • <strong>Goal:</strong> {form.goal}
+            </p>
+            <p><strong>Context:</strong> {form.context}</p>
+            <p><strong>Details:</strong> {form.details}</p>
+            <p><strong>Tone:</strong> {form.tone}</p>
+            <pre className="sig">{form.signature}</pre>
+          </div>
 
-          <Card title="Subject Lines (Top 3)">
-            {subjects.length === 0 ? (
-              <p className="text-sm text-neutral-500">Click Generate to get suggestions.</p>
-            ) : (
-              <ul className="list-disc pl-5 space-y-1 text-sm">
-                {subjects.map((s, i) => (
-                  <li key={i} className="text-neutral-800">{s}</li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <h3>Subject Lines (Top 3)</h3>
+          {subjects.length === 0 ? (
+            <p className="muted">Click Generate to get suggestions.</p>
+          ) : (
+            <ul>{subjects.map((s, i) => <li key={i}>{s}</li>)}</ul>
+          )}
 
-          <Card title="Drafts (A/B)">
-            {versions.length === 0 ? (
-              <p className="text-sm text-neutral-500">You’ll see two variants here after generation.</p>
-            ) : (
-              <div className="space-y-4">
-                {versions.map((v, i) => (
-                  <div key={i} className="rounded-lg border bg-white p-4">
-                    <div className="mb-2 text-xs font-semibold text-neutral-500">Version {i === 0 ? "A" : "B"}</div>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{v}</p>
-                  </div>
-                ))}
+          <h3>Email Drafts (A/B)</h3>
+          {versions.length === 0 ? (
+            <p className="muted">Drafts will appear here after you generate.</p>
+          ) : (
+            versions.map((v, i) => (
+              <div className="draft" key={i}>
+                <pre>{v}</pre>
               </div>
-            )}
-          </Card>
+            ))
+          )}
         </section>
-      </main>
-    </div>
-  );
-}
+      </div>
 
-/* ---------- small UI helpers ---------- */
-function Card({ title, children }) {
-  return (
-    <div className="rounded-xl border bg-white p-5 shadow-sm">
-      <h2 className="mb-4 text-base font-semibold text-neutral-900">{title}</h2>
-      {children}
+      <style jsx>{`
+        .container { max-width: 1050px; margin: 32px auto; padding: 0 16px; }
+        .topbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+        .back { text-decoration:none; color:#6b7280; }
+        h1 { font-weight:700; margin:0; }
+        .brand { color:#1e293b; }
+        .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; }
+        label { display:block; font-weight:600; margin-top:12px; margin-bottom:6px; }
+        input, textarea { width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:10px; }
+        .primary { margin-top:16px; padding:10px 14px; border-radius:8px; background:#111827; color:#fff; border:none; }
+        .preview { background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:12px; margin-bottom:12px; white-space:pre-wrap; }
+        .sig { white-space:pre-wrap; margin:0; }
+        .muted { color:#6b7280; }
+        .draft { margin-top:10px; border:1px dashed #e5e7eb; border-radius:8px; padding:12px; background:#fafafa; }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+      `}</style>
     </div>
   );
 }
-function Field({ label, children }) {
-  return (
-    <label className="mb-4 block">
-      <span className="mb-2 block text-sm font-medium text-neutral-700">{label}</span>
-      {children}
-    </label>
-  );
-}
-function Input({ value, onChange, ...rest }) {
-  return (
-    <input
-      className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm placeholder-neutral-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      {...rest}
-    />
-  );
-}
-function Textarea({ value, onChange, rows = 4, ...rest }) {
-  return (
-    <textarea
-      rows={rows}
-      className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm placeholder-neutral-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      {...rest}
-    />
-  );
-}
-const Spinner = (
-  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-  </svg>
-);
