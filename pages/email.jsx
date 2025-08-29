@@ -1,6 +1,6 @@
-// /pages/email.jsx
-import { useState } from "react";
+// pages/email.jsx
 import Link from "next/link";
+import { useState } from "react";
 
 export default function MailMate() {
   const [form, setForm] = useState({
@@ -12,7 +12,8 @@ export default function MailMate() {
     details:
       "Job: Product Marketing Intern at Glide. My strengths: copy, tooling, short-form.",
     tone: "Concise, confident, friendly",
-    signature: "Madev Thevan\nFounder, AmplyAI\nwww.amplyai.org | madev@amplyai.org",
+    signature:
+      "Madev Thevan\nFounder, AmplyAI\nwww.amplyai.org | madev@amplyai.org",
   });
 
   const [loading, setLoading] = useState(false);
@@ -44,10 +45,16 @@ export default function MailMate() {
 
   return (
     <div className="container">
+      {/* Back to Assistant */}
+      <p style={{ margin: "12px 0 6px" }}>
+        <Link href="/" style={{ textDecoration: "none", color: "#0070f3" }}>
+          ← Back to Assistant
+        </Link>
+      </p>
+
       <header className="topbar">
-        <Link href="/" className="back">&larr; Resume Helper</Link>
-        <h1>
-          <span className="brand">AmplyAI</span> — <span>MailMate</span>
+        <h1 style={{ margin: 0 }}>
+          AmplyAI — <span className="brand">MailMate</span>
         </h1>
       </header>
 
@@ -80,7 +87,7 @@ export default function MailMate() {
           <textarea rows={2} value={form.signature} onChange={set("signature")} />
 
           <button className="primary" onClick={generate} disabled={loading}>
-            {loading ? "Generating…" : "Review → Generate"}
+            {loading ? "Generating…" : "Generate"}
           </button>
         </section>
 
@@ -89,9 +96,7 @@ export default function MailMate() {
           <h2>Live Preview</h2>
           <div className="preview">
             <p><strong>To:</strong> {form.recipient}</p>
-            <p>
-              <strong>Intent:</strong> {form.intent} • <strong>Goal:</strong> {form.goal}
-            </p>
+            <p><strong>Intent:</strong> {form.intent} • <strong>Goal:</strong> {form.goal}</p>
             <p><strong>Context:</strong> {form.context}</p>
             <p><strong>Details:</strong> {form.details}</p>
             <p><strong>Tone:</strong> {form.tone}</p>
@@ -119,10 +124,8 @@ export default function MailMate() {
       </div>
 
       <style jsx>{`
-        .container { max-width: 1050px; margin: 32px auto; padding: 0 16px; }
+        .container { max-width: 1050px; margin: 24px auto; padding: 0 16px; }
         .topbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
-        .back { text-decoration:none; color:#6b7280; }
-        h1 { font-weight:700; margin:0; }
         .brand { color:#1e293b; }
         .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; }
