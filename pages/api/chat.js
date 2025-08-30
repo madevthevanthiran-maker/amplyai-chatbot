@@ -1,33 +1,14 @@
 // pages/api/chat.js
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+export default function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+  const { message = "" } = req.body || {};
+  const m = message.toLowerCase();
 
-  try {
-    const { messages = [] } = req.body || {};
+  if (!m.trim()) return res.json({ reply: "Tell me what you want to do." });
+  if (m.includes("email")) return res.json({ reply: "Use MailMate to draft or refine your email. Want me to open it?" });
+  if (m.includes("resume") || m.includes("cv")) return res.json({ reply: "Use HireHelper to structure your resume. Open it now?" });
+  if (m.includes("plan") || m.includes("schedule")) return res.json({ reply: "Try Planner to map your week. Open it?" });
 
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages,
-      }),
-    });
-
-    if (!r.ok) {
-      const text = await r.text();
-      return res.status(500).json({ error: `OpenAI error: ${text}` });
-    }
-
-    const data = await r.json();
-    return res.status(200).json(data);
-  } catch (e) {
-    return res.status(500).json({ error: e?.message || "Unknown error" });
-  }
+  // fallback: short helpful tone
+  return res.json({ reply: "Got it. I can help with MailMate (email), HireHelper (resume), and Planner (study/work). Which should we open?" });
 }
