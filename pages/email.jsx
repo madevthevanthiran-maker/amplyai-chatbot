@@ -1,8 +1,8 @@
 // pages/email.jsx
-import { useState } from "react";
 import Link from "next/link";
+import { useState } from "react";
 
-export default function MailMate() {
+export default function MailMate(){
   const [intent, setIntent] = useState("Cold outreach");
   const [recipient, setRecipient] = useState("Hiring Manager");
   const [goal, setGoal] = useState("Request a short intro call");
@@ -12,37 +12,64 @@ export default function MailMate() {
   const [details, setDetails] = useState(
     "Background: product + writing. Strong on clarity, brevity, shipping."
   );
+  const signature = "Best,\nYour Name\nwww.example.com | you@example.com";
 
   return (
-    <main className="container">
-      <header className="topbar">
-        <h1>MailMate — Email Composer</h1>
-        <Link href="/" className="back">← Back to Progress Partner</Link>
-      </header>
+    <main className="app">
+      <div className="backbar">
+        <Link href="/">← Back to Progress Partner</Link>
+        <Link className="pill-link" href="/hire-helper">HireHelper</Link>
+        <Link className="pill-link" href="/planner">Planner</Link>
+      </div>
 
-      <section className="card">
-        <h2>Intent & Target</h2>
-        <input value={intent} onChange={e=>setIntent(e.target.value)} placeholder="Email intent" />
-        <input value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Recipient" />
-        <input value={goal} onChange={e=>setGoal(e.target.value)} placeholder="Goal (clear CTA)" />
-      </section>
+      <div className="page">
+        <h2 className="section-title">AmplyAI — MailMate</h2>
 
-      <section className="card">
-        <h2>Context & Style</h2>
-        <textarea value={context} onChange={e=>setContext(e.target.value)} rows={4} />
-        <textarea value={details} onChange={e=>setDetails(e.target.value)} rows={4} />
-      </section>
+        <div className="grid">
+          <input
+            type="text"
+            value={intent}
+            onChange={(e)=>setIntent(e.target.value)}
+            placeholder="Email intent…"
+          />
+          <input
+            type="text"
+            value={recipient}
+            onChange={(e)=>setRecipient(e.target.value)}
+            placeholder="Who are you writing to?"
+          />
+          <input
+            type="text"
+            value={goal}
+            onChange={(e)=>setGoal(e.target.value)}
+            placeholder="One clear call-to-action"
+            className="full"
+          />
+          <textarea
+            value={context}
+            onChange={(e)=>setContext(e.target.value)}
+            placeholder="Context"
+            className="full"
+          />
+          <textarea
+            value={details}
+            onChange={(e)=>setDetails(e.target.value)}
+            placeholder="Details"
+            className="full"
+          />
+        </div>
 
-      <section className="card">
-        <h2>Live Preview</h2>
-        <p><strong>To:</strong> {recipient}</p>
-        <p><strong>Intent:</strong> {intent} • <strong>Goal:</strong> {goal}</p>
-        <p><strong>Context:</strong> {context}</p>
-        <p><strong>Details:</strong> {details}</p>
-        <p style={{opacity:.7, marginTop:12}}>
-          (Click generate in your UI to produce polished drafts via your API route.)
-        </p>
-      </section>
+        <div style={{marginTop:16}} className="preview">
+          <div><strong>To:</strong> {recipient}</div>
+          <div><strong>Intent:</strong> {intent} • <strong>Goal:</strong> {goal}</div>
+          <div style={{marginTop:10}}><strong>Context:</strong> {context}</div>
+          <div><strong>Details:</strong> {details}</div>
+          <div style={{whiteSpace:"pre-wrap", marginTop:10}}>{signature}</div>
+          <div style={{color:"var(--muted)", marginTop:10}}>
+            (Click “Generate” in your UI to produce polished drafts via your API route.)
+          </div>
+        </div>
+      </div>
     </main>
   );
 }
