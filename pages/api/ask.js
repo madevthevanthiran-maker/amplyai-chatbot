@@ -1,9 +1,22 @@
 // pages/api/ask.js
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
   const { question } = req.body || {};
-  if (!question) return res.status(400).json({ error: "Missing question" });
+  if (!question || !String(question).trim()) {
+    return res.status(400).json({ error: "Missing question" });
+  }
+
+  // If no key is set, reply with a helpful local fallback (zero cost)
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(200).json({
+      answer:
+        "I can help with MailMate (email), HireHelper (resume), and Planner (study/work). Ask about emails, resumes, or planning—or click one of the buttons above.",
+    });
+  }
 
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -14,15 +27,16 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
+        temperature: 0.5,
+        max_tokens: 280,
         messages: [
           {
             role: "system",
             content:
-              "You are a concise, helpful assistant for a productivity site called AmplyAI. Keep answers short, clear, and actionable.",
+              "You are AmplyAI’s Progress Partner. Answer briefly and helpfully in 2-5 sentences max. When relevant, suggest: MailMate (email), HireHelper (resume), Planner (study/work). Keep it friendly and actionable.",
           },
-          { role: "user", content: question },
+          { role: "user", content: String(question) },
         ],
-        temperature: 0.5,
       }),
     });
 
@@ -30,11 +44,10 @@ export default async function handler(req, res) {
       const err = await r.text();
       return res.status(500).json({ error: err || "OpenAI error" });
     }
-
     const j = await r.json();
-    const answer = j?.choices?.[0]?.message?.content?.trim() || "I couldn’t generate an answer.";
-    res.status(200).json({ answer });
+    const answer = j?.choices?.[0]?.message?.content?.trim() || "Okay.";
+    return res.status(200).json({ answer });
   } catch (e) {
-    res.status(500).json({ error: e?.message || "Server error" });
+    return res.status(500).json({ error: "Chat error" });
   }
 }
