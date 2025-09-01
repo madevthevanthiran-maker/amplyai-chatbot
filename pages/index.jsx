@@ -1,203 +1,369 @@
+// pages/index.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const MODES = {
-  mailmate: "MailMate (email)",
-  hirehelper: "HireHelper (resume)",
-  planner: "Planner (study/work)",
+const TABS = [
+  { id: "chat", label: "Chat (general)" },
+  { id: "mail", label: "MailMate (email)" },
+  { id: "hire", label: "HireHelper (resume)" },
+  { id: "plan", label: "Planner (study/work)" },
+];
+
+// System prompts used per tab.
+// Feel free to tweak the wording later.
+const SYSTEM_PROMPTS = {
+  chat:
+    "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully. If a user asks follow-ups, keep context.",
+  mail: `
+You are MailMate. Generate clean, professional emails based on the user's ask.
+- Keep it concise, clear and friendly.
+- Return just the email body (no extra commentary).
+- Add an email subject line at the top as "Subject: ...".
+- Offer 2 variants if the user asks for options.
+`,
+  hire: `
+You are HireHelper. Help users write bullets and summaries for resumes.
+- Use action verbs, impact, metrics when possible.
+- Keep bullets short (1–2 lines).
+- Return clean, copy-pasteable text (no extra commentary).
+`,
+  plan: `
+You are Planner. Help users plan their next two weeks for study/work.
+- Ask for hours/day, available days, deadlines.
+- Suggest a simple 14-day plan broken into days and tasks, compact and clear.
+`,
 };
 
-const EXAMPLES = {
-  mailmate: [
-    "Write a polite follow-up after a product demo",
-    "Decline a meeting but keep the door open",
-  ],
-  hirehelper: [
-    "Rewrite bullets for SWE internship",
-    "Tailor resume to a Growth PM role",
-  ],
-  planner: [
-    "Plan 2 weeks for finals (2h/day, M/W/F)",
-    "Schedule around Tue/Thu evenings only",
-  ],
-};
+export default function Home() {
+  // Which tab is active
+  const [mode, setMode] = useState("chat");
 
-export default function ProgressPartner() {
-  const [mode, setMode] = useState("mailmate");
+  // Preserve separate conversations per tab so switching doesn’t wipe the history
+  const [convos, setConvos] = useState({
+    chat: [],
+    mail: [],
+    hire: [],
+    plan: [],
+  });
+
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [sending, setSending] = useState(false);
-  const endRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef(null);
 
-  // Load history per mode
-  useEffect(() => {
-    const saved = localStorage.getItem(`pp:chat:${mode}`);
-    setMessages(saved ? JSON.parse(saved) : []);
-  }, [mode]);
+  const messages = convos[mode];
 
-  // Persist history per mode
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
-    localStorage.setItem(`pp:chat:${mode}`, JSON.stringify(messages));
-  }, [mode, messages]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, mode]);
 
-  // Auto scroll
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sending]);
+  // Compose a user message and call the /api/chat endpoint with the right system prompt
+  const send = async () => {
+    if (!input.trim() || loading) return;
+
+    const newUserMsg = { role: "user", content: input.trim() };
+    const next = [...messages, newUserMsg];
+
+    setConvos((prev) => ({ ...prev, [mode]: next }));
+    setInput("");
+    setLoading(true);
+
+    try {
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: SYSTEM_PROMPTS[mode],
+          messages: next,
+        }),
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error("Chat API failed:", text);
+        throw new Error("Chat API failed");
+      }
+
+      const data = await resp.json();
+      const replyText = data?.reply || "Sorry, I couldn’t generate a reply.";
+
+      setConvos((prev) => ({
+        ...prev,
+        [mode]: [...prev[mode], { role: "assistant", content: replyText }],
+      }));
+    } catch (e) {
+      console.error(e);
+      setConvos((prev) => ({
+        ...prev,
+        [mode]: [
+          ...prev[mode],
+          { role: "assistant", content: "Hmm... I couldn’t reply right now. Try again?" },
+        ],
+      }));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const placeholder = useMemo(() => {
     switch (mode) {
-      case "mailmate":
+      case "mail":
         return "e.g., write a concise follow-up email after a demo…";
-      case "hirehelper":
-        return "e.g., rewrite bullets for a Product Manager role…";
+      case "hire":
+        return "e.g., turn this experience into 3 resume bullets…";
+      case "plan":
+        return "e.g., plan 2 weeks for finals, 2h/day, Mon-Fri…";
       default:
-        return "e.g., plan 2 weeks around 3 deadlines, 2h/day…";
+        return "Type a message…";
     }
   }, [mode]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || sending) return;
-
-    const next = [...messages, { role: "user", content: text }];
-    setMessages(next);
-    setInput("");
-    setSending(true);
-
-    try {
-      const res = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, messages: next }),
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setMessages([...next, { role: "assistant", content: data.answer }]);
-    } catch (err) {
-      setMessages([
-        ...next,
-        {
-          role: "assistant",
-          content:
-            "I hit a snag generating a reply. Mind trying again in a moment?",
-        },
-      ]);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  function onKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
-
   return (
-    <div className="pp-root">
-      <header className="pp-header">
-        <div className="pp-brand">
-          <span className="pp-dot" />
-          <span className="pp-name">AmplyAI</span>
-          <span className="pp-sep">—</span>
-          <span className="pp-page">Progress Partner</span>
+    <div className="page">
+      <header className="topbar">
+        <div className="brand">
+          <span className="dot" /> <span className="brandName">AmplyAI</span>
+          <span className="divider">—</span>
+          <span className="title">Progress Partner</span>
         </div>
-        <div className="pp-quicklinks">
-          {Object.entries(MODES).map(([k, label]) => (
+
+        <nav className="tabs">
+          {TABS.map((t) => (
             <button
-              key={k}
-              className={`pp-pill ${mode === k ? "active" : ""}`}
-              onClick={() => setMode(k)}
+              key={t.id}
+              className={`tab ${mode === t.id ? "active" : ""}`}
+              onClick={() => setMode(t.id)}
             >
-              {label.split(" ")[0]}
+              {t.label}
             </button>
           ))}
-        </div>
+        </nav>
       </header>
 
-      <main className="pp-main">
-        <div className="pp-card">
-          <nav className="pp-tabs">
-            {Object.entries(MODES).map(([k, label]) => (
+      <main className="shell">
+        <div className="chatCard">
+          {/* Optional tiny header buttons for quick context */}
+          <div className="miniTabs">
+            {TABS.map((t) => (
               <button
-                key={k}
-                className={`pp-tab ${mode === k ? "active" : ""}`}
-                onClick={() => setMode(k)}
+                key={t.id}
+                className={`miniTab ${mode === t.id ? "active" : ""}`}
+                onClick={() => setMode(t.id)}
               >
-                {label}
+                {t.label}
               </button>
             ))}
-          </nav>
+          </div>
 
-          <section className="pp-chat">
+          <div className="chatWindow">
             {messages.length === 0 && (
-              <div className="pp-welcome">
-                <div className="pp-welcome-title">
+              <div className="starter">
+                <p className="starterTitle">
                   Hey! I’m your Progress Partner. What do you want to do today?
-                </div>
-                <ul className="pp-welcome-list">
+                </p>
+                <ul className="starterList">
                   <li>Write a great email (MailMate)</li>
                   <li>Build/refresh your resume (HireHelper)</li>
-                  <li>Plan study/work for 2 weeks (Planner)</li>
+                  <li>Plan study/work for two weeks (Planner)</li>
+                  <li>Or just ask anything in Chat (general)</li>
                 </ul>
               </div>
             )}
 
             {messages.map((m, i) => (
-              <div key={i} className={`pp-msg ${m.role}`}>
-                <div className="pp-avatar">
-                  {m.role === "assistant" ? "PP" : "You"}
-                </div>
-                <div className="pp-bubble">{m.content}</div>
-              </div>
-            ))}
-
-            {sending && (
-              <div className="pp-msg assistant">
-                <div className="pp-avatar">PP</div>
-                <div className="pp-bubble">
-                  <span className="pp-typing">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
+              <div key={i} className={`msgRow ${m.role}`}>
+                <div className="avatar">{m.role === "assistant" ? "PP" : "You"}</div>
+                <div className="bubble">
+                  <pre className="content">{m.content}</pre>
                 </div>
               </div>
-            )}
-
-            <div ref={endRef} />
-          </section>
-
-          <div className="pp-chips">
-            {EXAMPLES[mode].map((t) => (
-              <button
-                key={t}
-                className="pp-chip"
-                onClick={() => setInput(t)}
-                disabled={sending}
-              >
-                {t}
-              </button>
             ))}
+            <div ref={bottomRef} />
           </div>
 
-          <footer className="pp-composer">
-            <textarea
+          <div className="inputRow">
+            <input
+              className="input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
               placeholder={placeholder}
-              rows={1}
             />
-            <button className="pp-send" onClick={send} disabled={sending}>
-              {sending ? "…" : "Send"}
+            <button className="send" onClick={send} disabled={loading}>
+              {loading ? "..." : "Send"}
             </button>
-          </footer>
+          </div>
         </div>
       </main>
+
+      <style jsx>{`
+        .page {
+          min-height: 100vh;
+          background: radial-gradient(1200px 700px at 20% -10%, #0b1b3a55, transparent),
+            radial-gradient(900px 600px at 80% -10%, #0b1b3a55, transparent), #0b1526;
+          color: #e9eefc;
+        }
+        .topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 24px;
+        }
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          opacity: 0.95;
+        }
+        .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #56a8ff;
+        }
+        .brandName {
+          font-weight: 700;
+        }
+        .divider {
+          opacity: 0.5;
+        }
+        .title {
+          opacity: 0.8;
+        }
+        .tabs {
+          display: flex;
+          gap: 8px;
+        }
+        .tab {
+          padding: 8px 14px;
+          border-radius: 999px;
+          border: 1px solid #2c3d62;
+          background: #0f1d34;
+          color: #c9d8ff;
+        }
+        .tab.active {
+          background: #2b59ff22;
+          border-color: #5b7cff;
+          color: #e9efff;
+        }
+        .shell {
+          display: flex;
+          justify-content: center;
+          padding: 24px;
+        }
+        .chatCard {
+          width: 100%;
+          max-width: 980px;
+          background: #0e1a2d;
+          border: 1px solid #1f2c4a;
+          border-radius: 16px;
+          box-shadow: 0 6px 40px rgba(5, 12, 28, 0.5);
+          padding: 14px;
+        }
+        .miniTabs {
+          display: flex;
+          gap: 8px;
+          padding: 4px 6px 10px;
+        }
+        .miniTab {
+          padding: 6px 10px;
+          border-radius: 10px;
+          border: 1px solid #203356;
+          background: #0f1d34;
+          color: #a9b9e9;
+          font-size: 12px;
+        }
+        .miniTab.active {
+          background: #2b59ff22;
+          border-color: #5b7cff;
+          color: #e9efff;
+        }
+        .chatWindow {
+          height: 56vh;
+          overflow: auto;
+          background: #0b1524;
+          border: 1px solid #17294a;
+          border-radius: 12px;
+          padding: 14px;
+        }
+        .starter {
+          opacity: 0.9;
+          padding: 6px 2px 8px;
+        }
+        .starterTitle {
+          margin: 0 0 6px;
+          font-weight: 600;
+        }
+        .starterList {
+          margin: 0;
+          padding-left: 18px;
+          opacity: 0.85;
+        }
+        .msgRow {
+          display: flex;
+          gap: 10px;
+          margin: 10px 0;
+        }
+        .msgRow .avatar {
+          min-width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          font-size: 12px;
+          background: #112246;
+          color: #b9cbff;
+          border: 1px solid #1c2c52;
+        }
+        .msgRow.user .avatar {
+          background: #1a2644;
+          color: #dfe7ff;
+        }
+        .bubble {
+          background: #0f1e3a;
+          border: 1px solid #1c2c52;
+          padding: 10px 12px;
+          border-radius: 12px;
+          max-width: 80%;
+          white-space: pre-wrap;
+        }
+        .content {
+          margin: 0;
+          font-family: ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono",
+            "Roboto Mono", monospace;
+          font-size: 13.5px;
+          line-height: 1.45;
+        }
+        .inputRow {
+          display: flex;
+          gap: 10px;
+          margin-top: 12px;
+        }
+        .input {
+          flex: 1;
+          padding: 14px 16px;
+          border-radius: 12px;
+          border: 1px solid #21325a;
+          background: #0e1a2d;
+          color: #e9eefc;
+          outline: none;
+        }
+        .send {
+          padding: 0 18px;
+          border-radius: 12px;
+          background: #2c55ff;
+          color: white;
+          border: none;
+          min-width: 84px;
+        }
+        .send:disabled {
+          opacity: 0.6;
+        }
+      `}</style>
     </div>
   );
 }
