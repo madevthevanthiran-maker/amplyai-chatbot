@@ -1,102 +1,102 @@
-// pages/index.jsx
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import Link from "next/link";
 
 export default function Home() {
-  const [q, setQ] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [loading, setLoading] = useState(false);
-  const inputRef = useRef(null);
+  const [messages, setMessages] = useState([
+    {
+      role: "bot",
+      text:
+        "Hey! I’m your Progress Partner. What do you want to do today?\n• Write a great email (MailMate)\n• Build/refresh your resume (HireHelper)\n• Plan study/work for the next 2 weeks (Planner)",
+    },
+  ]);
+  const [text, setText] = useState("");
+  const [typing, setTyping] = useState(false);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  async function smartRoute(e) {
+  const send = (e) => {
     e.preventDefault();
-    const s = q.trim().toLowerCase();
-    if (!s) return;
+    const clean = text.trim();
+    if (!clean) return;
 
-    // Hard-route to tools if intent is clear
-    if (/(email|cold|follow.?up|outreach|intro|mailmate)/.test(s)) {
-      window.location.href = "/email";
-      return;
-    }
-    if (/(resume|cv|ats|hire|job|hirehelper)/.test(s)) {
-      window.location.href = "/hire-helper";
-      return;
-    }
-    if (/(plan|study|schedule|work|week|calendar|tasks?|planner)/.test(s)) {
-      window.location.href = "/planner";
-      return;
-    }
+    // append user bubble
+    setMessages((m) => [...m, { role: "user", text: clean }]);
+    setText("");
+    setTyping(true);
 
-    // Otherwise: answer inline
-    try {
-      setLoading(true);
-      setAnswer("");
-      const r = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q }),
-      });
-      const j = await r.json();
-      setAnswer(j.answer || "I couldn’t generate an answer.");
-    } catch (err) {
-      setAnswer("Sorry — I couldn’t answer that right now.");
-    } finally {
-      setLoading(false);
-    }
-  }
+    // simple, friendly “router” answer (UI polish step; no external calls)
+    setTimeout(() => {
+      setMessages((m) => [
+        ...m,
+        {
+          role: "bot",
+          text:
+            "Got it. You can jump into:\n• MailMate for emails\n• HireHelper for resumes\n• Planner to map your 2-week plan",
+        },
+      ]);
+      setTyping(false);
+    }, 600);
+  };
 
   return (
-    <div className="page" style={{ paddingTop: 28 }}>
-      {/* Top nav chips */}
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginBottom: 8 }}>
-        <a className="pill-link" href="/email">MailMate</a>
-        <a className="pill-link" href="/hire-helper">HireHelper</a>
-        <a className="pill-link" href="/planner">Planner</a>
+    <div className="container">
+      {/* Header */}
+      <div className="header">
+        <div className="app-title">AmplyAI — Progress Partner</div>
+        <nav className="top-links">
+          <Link href="/email">MailMate</Link>
+          <Link href="/hire-helper">HireHelper</Link>
+          <Link href="/resume-builder">Planner</Link>
+        </nav>
       </div>
 
-      <h1 style={{ marginBottom: 16 }}>AmplyAI — <span style={{ fontWeight: 500 }}>Progress Partner</span></h1>
-
-      <div className="card chat">
-        <div className="bubble">
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-            What do you want to do today?
-          </div>
-          <div style={{ color: "var(--muted)" }}>
-            • Write a great email (MailMate) &nbsp;• Build/refresh your resume (HireHelper) &nbsp;• Or ask me something here.
-          </div>
+      {/* Chat Card */}
+      <div className="card">
+        <div className="greeting">
+          What do you want to do?
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-          <a className="pill-link" href="/email">📧&nbsp;MailMate (email)</a>
-          <a className="pill-link" href="/hire-helper">💼&nbsp;HireHelper (resume)</a>
-          <a className="pill-link" href="/planner">🗓️&nbsp;Planner (study/work)</a>
-        </div>
+        {/* messages */}
+        <div className="messages" role="log" aria-live="polite">
+          {messages.map((m, i) => (
+            <div key={i} className="row">
+              <div className="avatar">{m.role === "bot" ? "PP" : "You"}</div>
+              <div className={`bubble ${m.role}`}>{m.text}</div>
+            </div>
+          ))}
 
-        {/* Ask box */}
-        <form onSubmit={smartRoute} style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input
-            ref={inputRef}
-            className="input"
-            placeholder="Type what you want to do… or ask a quick question"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) smartRoute(e);
-            }}
-          />
-          <button className="btn" type="submit">Send</button>
-        </form>
-
-        {/* Inline answer (fallback QA) */}
-        {loading && <div style={{ marginTop: 12, color: "var(--muted)" }}>Thinking…</div>}
-        {!loading && !!answer && (
-          <div className="preview" style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>
-            {answer}
+        {/* typing indicator */}
+        {typing && (
+          <div className="row">
+            <div className="avatar">PP</div>
+            <div className="bubble bot">
+              <span className="typing">
+                <span className="dot" />
+                <span className="dot" />
+                <span className="dot" />
+              </span>
+            </div>
           </div>
         )}
+        </div>
+
+        {/* quick links under the log */}
+        <div className="quick">
+          <Link href="/email">📧 MailMate (email)</Link>
+          <Link href="/hire-helper">💼 HireHelper (resume)</Link>
+          <Link href="/resume-builder">🗓️ Planner (study/work)</Link>
+        </div>
+
+        {/* composer */}
+        <form onSubmit={send} className="composer">
+          <input
+            className="input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Type what you want to do…"
+          />
+          <button className="button" type="submit">
+            Send
+          </button>
+        </form>
       </div>
     </div>
   );
