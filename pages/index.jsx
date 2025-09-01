@@ -1,20 +1,22 @@
+// pages/index.jsx (or index.js)
 import { useState } from "react";
 import Link from "next/link";
+import { useLocalState } from "../lib/useLocalState";
 
 export default function Home() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useLocalState("pp.messages", [
     {
       role: "bot",
       text:
         "Hey! I’m your Progress Partner. What do you want to do today?\n• Write a great email (MailMate)\n• Build/refresh your resume (HireHelper)\n• Plan study/work for the next 2 weeks (Planner)",
     },
   ]);
-  const [text, setText] = useState("");
+  const [text, setText] = useLocalState("pp.input", "");
   const [typing, setTyping] = useState(false);
 
   const send = (e) => {
     e.preventDefault();
-    const clean = text.trim();
+    const clean = (text || "").trim();
     if (!clean) return;
 
     // append user bubble
@@ -22,7 +24,7 @@ export default function Home() {
     setText("");
     setTyping(true);
 
-    // simple, friendly “router” answer (UI polish step; no external calls)
+    // simple, friendly router reply (no API cost)
     setTimeout(() => {
       setMessages((m) => [
         ...m,
@@ -36,6 +38,18 @@ export default function Home() {
     }, 600);
   };
 
+  const clearChat = () => {
+    // reset to first greeting and wipe draft input
+    setMessages([
+      {
+        role: "bot",
+        text:
+          "Hey! I’m your Progress Partner. What do you want to do today?\n• Write a great email (MailMate)\n• Build/refresh your resume (HireHelper)\n• Plan study/work for the next 2 weeks (Planner)",
+      },
+    ]);
+    setText("");
+  };
+
   return (
     <div className="container">
       {/* Header */}
@@ -44,15 +58,13 @@ export default function Home() {
         <nav className="top-links">
           <Link href="/email">MailMate</Link>
           <Link href="/hire-helper">HireHelper</Link>
-          <Link href="/resume-builder">Planner</Link>
+          <Link href="/planner">Planner</Link>
         </nav>
       </div>
 
       {/* Chat Card */}
       <div className="card">
-        <div className="greeting">
-          What do you want to do?
-        </div>
+        <div className="greeting">What do you want to do?</div>
 
         {/* messages */}
         <div className="messages" role="log" aria-live="polite">
@@ -63,26 +75,26 @@ export default function Home() {
             </div>
           ))}
 
-        {/* typing indicator */}
-        {typing && (
-          <div className="row">
-            <div className="avatar">PP</div>
-            <div className="bubble bot">
-              <span className="typing">
-                <span className="dot" />
-                <span className="dot" />
-                <span className="dot" />
-              </span>
+          {/* typing indicator */}
+          {typing && (
+            <div className="row">
+              <div className="avatar">PP</div>
+              <div className="bubble bot">
+                <span className="typing">
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
+                </span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         </div>
 
         {/* quick links under the log */}
         <div className="quick">
           <Link href="/email">📧 MailMate (email)</Link>
           <Link href="/hire-helper">💼 HireHelper (resume)</Link>
-          <Link href="/resume-builder">🗓️ Planner (study/work)</Link>
+          <Link href="/planner">🗓️ Planner (study/work)</Link>
         </div>
 
         {/* composer */}
@@ -92,9 +104,24 @@ export default function Home() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Type what you want to do…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send(e);
+              }
+            }}
           />
           <button className="button" type="submit">
             Send
+          </button>
+          <button
+            className="button"
+            type="button"
+            style={{ background: "#334155" }}
+            onClick={clearChat}
+            title="Clear conversation"
+          >
+            Clear
           </button>
         </form>
       </div>
