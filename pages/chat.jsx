@@ -1,203 +1,178 @@
-// pages/chat.jsx
+// components/ChatBox.jsx
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { askGeneral } from "@/utils/chatClient";
 
-export default function Chat() {
+export default function ChatBox({
+  storageKey = "pp.general",
+  placeholder = "Ask me anything…",
+  header = "General Chat",
+  system = "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully.",
+}) {
   const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hey! I’m your Progress Partner. How can I help?" },
+    { role: "system", content: system },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const endRef = useRef(null);
+  const scrollerRef = useRef(null);
 
-  // Persist chat
   useEffect(() => {
-    const saved = localStorage.getItem("pp-general-chat");
-    if (saved) {
-      try {
-        setMessages(JSON.parse(saved));
-      } catch {}
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
+      }
+    } catch {}
+  }, [storageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(messages));
+    } catch {}
+  }, [messages, storageKey]);
+
+  useEffect(() => {
+    if (scrollerRef.current) {
+      scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
     }
-  }, []);
-  useEffect(() => {
-    localStorage.setItem("pp-general-chat", JSON.stringify(messages));
-  }, [messages]);
-
-  // Auto-scroll
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  async function sendMessage(e) {
-    e?.preventDefault?.();
-    const trimmed = input.trim();
-    if (!trimmed || loading) return;
-
-    const nextMsgs = [...messages, { role: "user", content: trimmed }];
-    setMessages(nextMsgs);
+  async function send() {
+    const content = input.trim();
+    if (!content) return;
     setInput("");
-    setLoading(true);
 
+    const userMsg = { role: "user", content };
+    const convo = messages.filter((m) => m.role !== "system");
+    const next = [...convo, userMsg];
+
+    setMessages((prev) => [...prev, userMsg]);
+    setLoading(true);
     try {
-      const resp = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMsgs }),
-      });
-      const data = await resp.json();
-      if (data?.reply) {
-        setMessages((m) => [...m, { role: "assistant", content: data.reply }]);
-      } else {
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: "Hmm, I couldn’t generate a reply just now." },
-        ]);
-      }
-    } catch (err) {
-      console.error(err);
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: "Server error. Please try again." },
+      const reply = await askGeneral(next, system);
+      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+    } catch (e) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `Sorry — ${e.message}` },
       ]);
     } finally {
       setLoading(false);
     }
   }
 
+  function onKeyDown(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  }
+
   return (
-    <div className="page">
-      {/* Top nav pills (match your style) */}
-      <header className="topbar">
-        <div className="brand">
-          <span className="dot" /> AmplyAI <span className="sep">—</span> Progress Partner
-        </div>
-        <nav className="pills">
-          <Link href="/" className="pill">Home</Link>
-          <Link href="/email" className="pill">MailMate</Link>
-          <Link href="/hire-helper" className="pill">HireHelper</Link>
-          <Link href="/planner" className="pill">Planner</Link>
-          <Link href="/chat" className="pill pill-active">Chat</Link>
-        </nav>
-      </header>
+    <div className="pp-chat-wrap">
+      <div className="pp-chat-header">{header}</div>
 
-      <main className="wrap">
-        <div className="chat">
-          <div className="messages">
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`bubble ${m.role === "user" ? "me" : "bot"}`}
-              >
-                <div className="meta">{m.role === "user" ? "You" : "PP"}</div>
-                <div className="content">{m.content}</div>
-              </div>
-            ))}
-            {loading && (
-              <div className="bubble bot">
-                <div className="meta">PP</div>
-                <div className="content">Thinking…</div>
-              </div>
-            )}
-            <div ref={endRef} />
+      <div className="pp-chat-scroller" ref={scrollerRef}>
+        {messages
+          .filter((m) => m.role !== "system")
+          .map((m, i) => (
+            <div key={i} className={`pp-msg ${m.role}`}>
+              <div className="pp-bubble">{m.content}</div>
+            </div>
+          ))}
+        {loading && (
+          <div className="pp-msg assistant">
+            <div className="pp-bubble">Thinking…</div>
           </div>
+        )}
+      </div>
 
-          <form className="composer" onSubmit={sendMessage}>
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything… (e.g., 'explain webhooks', 'best study plan for finals')"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) sendMessage(e);
-              }}
-            />
-            <button disabled={loading} type="submit">
-              {loading ? "Sending…" : "Send"}
-            </button>
-          </form>
-        </div>
-      </main>
+      <div className="pp-input-row">
+        <textarea
+          className="pp-input"
+          placeholder={placeholder}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          rows={1}
+        />
+        <button className="pp-send" onClick={send} disabled={loading}>
+          Send
+        </button>
+      </div>
 
       <style jsx>{`
-        .page {
-          min-height: 100vh;
-          background: radial-gradient(1200px 600px at 20% 0%, #0b1730 0%, #081226 35%, #070f1f 60%, #060d1a 100%);
-          color: #e6edff;
-        }
-        .topbar {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+        .pp-chat-wrap {
+          display: grid;
+          grid-template-rows: auto 1fr auto;
           gap: 12px;
-          padding: 16px 20px;
-        }
-        .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; opacity: .95; }
-        .dot { width: 8px; height: 8px; background: #5bd1ff; border-radius: 50%; display: inline-block; }
-        .sep { opacity: .5; margin: 0 8px; }
-        .pills { display: flex; gap: 8px; }
-        .pill {
-          padding: 8px 12px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 999px;
-          font-size: 14px;
-        }
-        .pill:hover { background: rgba(255,255,255,0.08); }
-        .pill-active { background: #2a5eff; border-color: #2a5eff; color: white; }
-        .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
-        .chat {
-          background: rgba(0,0,0,0.25);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 16px;
-          box-shadow: 0 10px 30px rgba(0,0,0,.25);
-          overflow: hidden;
-        }
-        .messages {
-          max-height: min(62vh, 560px);
-          overflow-y: auto;
+          width: 100%;
+          max-width: 980px;
+          margin: 0 auto;
           padding: 16px;
+          background: rgba(12, 18, 35, 0.55);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          border-radius: 16px;
         }
-        .bubble {
-          max-width: 85%;
-          padding: 10px 12px;
+        .pp-chat-header {
+          font-weight: 600;
+          opacity: 0.9;
+        }
+        .pp-chat-scroller {
+          overflow: auto;
+          max-height: calc(70vh);
+          padding: 8px;
           border-radius: 12px;
-          margin: 10px 0;
-          line-height: 1.45;
-          white-space: pre-wrap;
-          word-break: break-word;
-          border: 1px solid rgba(255,255,255,.07);
+          background: rgba(255, 255, 255, 0.03);
         }
-        .bubble.me { margin-left: auto; background: rgba(83, 131, 255, .15); border-color: rgba(83,131,255,.4); }
-        .bubble.bot { margin-right: auto; background: rgba(255,255,255,.03); }
-        .meta { font-size: 12px; opacity: .65; margin-bottom: 6px; }
-        .composer {
+        .pp-msg {
+          display: flex;
+          margin-bottom: 10px;
+        }
+        .pp-msg.user {
+          justify-content: flex-end;
+        }
+        .pp-msg.assistant {
+          justify-content: flex-start;
+        }
+        .pp-bubble {
+          padding: 10px 14px;
+          border-radius: 12px;
+          line-height: 1.45;
+          max-width: 88%;
+          white-space: pre-wrap;
+        }
+        .pp-msg.user .pp-bubble {
+          background: rgba(71, 127, 255, 0.2);
+          border: 1px solid rgba(71, 127, 255, 0.35);
+        }
+        .pp-msg.assistant .pp-bubble {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .pp-input-row {
           display: grid;
           grid-template-columns: 1fr auto;
           gap: 10px;
-          padding: 12px;
-          border-top: 1px solid rgba(255,255,255,0.08);
-          background: rgba(0,0,0,0.15);
+          align-items: center;
         }
-        .composer input {
-          height: 44px;
-          padding: 0 14px;
-          border-radius: 10px;
-          background: rgba(255,255,255,0.06);
-          color: #e6edff;
-          border: 1px solid rgba(255,255,255,0.1);
+        .pp-input {
+          resize: none;
+          padding: 12px 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(255, 255, 255, 0.04);
           outline: none;
         }
-        .composer input::placeholder { color: rgba(230,237,255,.5); }
-        .composer button {
-          min-width: 96px;
-          height: 44px;
-          border-radius: 10px;
-          border: 1px solid #2a5eff;
-          background: #2a5eff;
-          color: white;
-          font-weight: 600;
+        .pp-send {
+          padding: 10px 16px;
+          border-radius: 12px;
+          border: 1px solid rgba(71, 127, 255, 0.5);
+          background: rgba(71, 127, 255, 0.25);
+          cursor: pointer;
         }
-        .composer button[disabled] {
-          opacity: .75;
+        .pp-send:disabled {
+          opacity: 0.6;
           cursor: not-allowed;
         }
       `}</style>
