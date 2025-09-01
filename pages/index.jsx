@@ -1,155 +1,120 @@
-// pages/index.jsx (or index.js)
-import Link from "next/link";
+// pages/index.jsx
 import { useState } from "react";
 import useLocalState from "../lib/useLocalState";
+import Link from "next/link";
 
 export default function Home() {
+  const [input, setInput] = useState("");
   const [messages, setMessages] = useLocalState("pp.messages", [
     {
-      role: "bot",
+      role: "assistant",
       text:
-        "Hey! I’m your Progress Partner. What do you want to do today?\n• Write a great email (MailMate)\n• Build/refresh your resume (HireHelper)\n• Plan study/work for the next 2 weeks (Planner)",
+        "Hey! I’m your Progress Partner. What do you want to do today?\n• Write a great email (MailMate)\n• Build/refresh your resume (HireHelper)\n• Plan your study/work (Planner)\nOr just ask me something here.",
     },
   ]);
-  const [text, setText] = useLocalState("pp.input", "");
-  const [typing, setTyping] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  function intentOf(s) {
-    const t = s.toLowerCase();
-    if (/(email|cold|follow.?up|outreach|intro|mailmate)/.test(t)) return "email";
-    if (/(resume|cv|ats|hire|job|hirehelper|hire helper)/.test(t)) return "resume";
-    if (/(plan|study|schedule|work|week|calendar|tasks?|planner)/.test(t)) return "planner";
-    return "unknown";
-  }
-
-  async function send(e) {
+  async function onSubmit(e) {
     e.preventDefault();
-    const clean = (text || "").trim();
-    if (!clean) return;
+    const q = input.trim();
+    if (!q) return;
 
-    // add user bubble
-    setMessages((m) => [...m, { role: "user", text: clean }]);
-    setText("");
+    // append user message
+    const next = [...messages, { role: "user", text: q }];
+    setMessages(next);
+    setInput("");
 
-    // route if clear intent
-    const intent = intentOf(clean);
-    if (intent === "email") return (window.location.href = "/email");
-    if (intent === "resume") return (window.location.href = "/hire-helper");
-    if (intent === "planner") return (window.location.href = "/planner");
+    // quick routes
+    const qLower = q.toLowerCase();
+    if (qLower.includes("mailmate") || qLower.includes("email")) {
+      setMessages([
+        ...next,
+        {
+          role: "assistant",
+          text:
+            "Opening MailMate… If it didn’t open, click here: /email",
+        },
+      ]);
+      window.location.href = "/email";
+      return;
+    }
+    if (
+      qLower.includes("resume") ||
+      qLower.includes("cv") ||
+      qLower.includes("hirehelper")
+    ) {
+      setMessages([
+        ...next,
+        {
+          role: "assistant",
+          text:
+            "Opening HireHelper… If it didn’t open, click here: /hire-helper",
+        },
+      ]);
+      window.location.href = "/hire-helper";
+      return;
+    }
+    if (qLower.includes("plan") || qLower.includes("planner")) {
+      setMessages([
+        ...next,
+        {
+          role: "assistant",
+          text:
+            "Opening Planner… If it didn’t open, click here: /planner",
+        },
+      ]);
+      window.location.href = "/planner";
+      return;
+    }
 
-    // else: answer via /api/ask
-    setTyping(true);
+    // otherwise ask the backend
+    setLoading(true);
     try {
       const r = await fetch("/api/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: clean }),
+        body: JSON.stringify({ prompt: q }),
       });
-      const j = await r.json();
-      const answer =
-        j?.answer ||
-        "I can help with MailMate (email), HireHelper (resume), and Planner (study/work). Which should we open?";
-      setMessages((m) => [...m, { role: "bot", text: answer }]);
-    } catch {
+      const data = await r.json();
+      const text =
+        data?.text ||
+        data?.error ||
+        "Sorry, I couldn’t produce a response.";
+      setMessages((m) => [...m, { role: "assistant", text }]);
+    } catch (err) {
       setMessages((m) => [
         ...m,
-        {
-          role: "bot",
-          text:
-            "I’m here, but couldn’t generate a full answer. You can jump into MailMate (email), HireHelper (resume), or Planner (study/work).",
-        },
+        { role: "assistant", text: "Network error. Try again in a moment." },
       ]);
     } finally {
-      setTyping(false);
+      setLoading(false);
     }
   }
 
-  const clearChat = () => {
-    setMessages([
-      {
-        role: "bot",
-        text:
-          "Hey! I’m your Progress Partner. What do you want to do today?\n• Write a great email (MailMate)\n• Build/refresh your resume (HireHelper)\n• Plan study/work for the next 2 weeks (Planner)",
-      },
-    ]);
-    setText("");
-  };
-
   return (
-    <div className="container">
-      {/* Header */}
-      <div className="header">
-        <div className="app-title">AmplyAI — Progress Partner</div>
-        <nav className="top-links">
-          <Link href="/email">MailMate</Link>
-          <Link href="/hire-helper">HireHelper</Link>
-          <Link href="/planner">Planner</Link>
-        </nav>
-      </div>
+    <main className="container">
+      <header className="topnav">
+        <Link href="/email">MailMate</Link>
+        <Link href="/hire-helper">HireHelper</Link>
+        <Link href="/planner">Planner</Link>
+      </header>
 
-      {/* Chat Card */}
-      <div className="card">
-        <div className="greeting">What do you want to do?</div>
+      <section className="chat">
+        {messages.map((m, i) => (
+          <div key={i} className={`msg ${m.role}`}>
+            {m.text}
+          </div>
+        ))}
 
-        {/* messages */}
-        <div className="messages" role="log" aria-live="polite">
-          {messages.map((m, i) => (
-            <div key={i} className="row">
-              <div className="avatar">{m.role === "bot" ? "PP" : "You"}</div>
-              <div className={`bubble ${m.role}`}>{m.text}</div>
-            </div>
-          ))}
-
-          {/* typing indicator */}
-          {typing && (
-            <div className="row">
-              <div className="avatar">PP</div>
-              <div className="bubble bot">
-                <span className="typing">
-                  <span className="dot" />
-                  <span className="dot" />
-                  <span className="dot" />
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* quick links under the log */}
-        <div className="quick">
-          <Link href="/email">📧 MailMate (email)</Link>
-          <Link href="/hire-helper">💼 HireHelper (resume)</Link>
-          <Link href="/planner">🗓️ Planner (study/work)</Link>
-        </div>
-
-        {/* composer */}
-        <form onSubmit={send} className="composer">
+        <form onSubmit={onSubmit} className="composer">
           <input
-            className="input"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Type what you want to do… or ask a quick question"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send(e);
-              }
-            }}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type what you want to do..."
+            disabled={loading}
           />
-          <button className="button" type="submit">
-            Send
-          </button>
-          <button
-            className="button"
-            type="button"
-            style={{ background: "#334155" }}
-            onClick={clearChat}
-            title="Clear conversation"
-          >
-            Clear
-          </button>
+          <button disabled={loading}>{loading ? "..." : "Send"}</button>
         </form>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
