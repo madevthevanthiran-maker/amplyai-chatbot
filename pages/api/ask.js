@@ -1,56 +1,41 @@
 // pages/api/ask.js
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "Method not allowed" });
+    return;
   }
 
   try {
-    const { prompt } = JSON.parse(req.body || "{}");
-    if (!prompt || typeof prompt !== "string") {
-      return res.status(400).json({ error: "Missing prompt" });
-    }
+    const { messages } = req.body;
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return res
-        .status(500)
-        .json({ error: "Missing OPENAI_API_KEY on server" });
-    }
-
-    // Lightweight, fast, and cost-friendly
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are Progress Partner, a concise and friendly assistant. If the user asks about email, resume/CV, or planning, give concrete steps and link back to the relevant tool (MailMate, HireHelper, Planner). Otherwise answer briefly and helpfully.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.4,
-        max_tokens: 300,
+        model: "gpt-4o-mini",   // fast + affordable model
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+        max_tokens: 200,
       }),
     });
 
-    if (!r.ok) {
-      const t = await r.text();
-      return res.status(500).json({ error: `Upstream error: ${t}` });
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("OpenAI error:", data.error);
+      res.status(500).json({ answer: "⚠️ AI request failed." });
+      return;
     }
 
-    const data = await r.json();
-    const text =
-      data?.choices?.[0]?.message?.content?.trim() ||
-      "Sorry, I couldn’t produce a response.";
-    return res.status(200).json({ text });
+    const answer = data.choices?.[0]?.message?.content?.trim() || "⚠️ No reply.";
+    res.status(200).json({ answer });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Unexpected server error" });
+    console.error("Server error:", err);
+    res.status(500).json({ answer: "⚠️ Server error." });
   }
 }
