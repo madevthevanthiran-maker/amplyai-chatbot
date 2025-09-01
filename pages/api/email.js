@@ -1,23 +1,49 @@
 // pages/api/email.js
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  const { prompt, tone = "professional", length = "medium" } = req.body || {};
-
-  // Build a richer instruction for your model
-  const system = `You are MailMate, an email-writing assistant.
-Write a clean, concise email in a ${tone} tone.
-Length target: ${length}.
-Return only the email body text (no extra commentary).`;
+  const { prompt, tone, length } = req.body;
 
   try {
-    // === Your existing LLM/provider call here ===
-    // For example: const text = await callModel({ system, prompt });
-    // Make sure to return as { drafts: [text] }
+    // Build a system prompt tailored for email writing
+    const systemPrompt = `
+You are MailMate, an email writing assistant.
+Always produce 2 polished email drafts in Markdown format.
+Apply the requested tone: ${tone}.
+Adjust the length: ${length}.
+Return ONLY email drafts, nothing else.
+    `;
 
-    const text = await someLLMCall(system, prompt); // <— replace with your actual call
-    res.status(200).json({ drafts: [text] });
-  } catch (e) {
-    res.status(500).json({ error: "generation_failed" });
+    const userPrompt = `Write an email: ${prompt}`;
+
+    // Example: using OpenAI API (replace with your actual client call)
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.7,
+      }),
+    });
+
+    const data = await response.json();
+    const text = data.choices[0].message.content;
+
+    // Split drafts by "---" or numbering
+    const drafts = text.split(/(?:^|\n)---+\n?/).map((d) => d.trim()).filter(Boolean);
+
+    res.status(200).json({ drafts });
+  } catch (err) {
+    console.error("MailMate error:", err);
+    res.status(500).json({ error: "Failed to generate email" });
   }
 }
