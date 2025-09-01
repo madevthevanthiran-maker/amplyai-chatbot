@@ -6,7 +6,19 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages } = req.body;
+    const { messages, mode } = req.body;
+
+    // Custom system prompts
+    const systemPrompts = {
+      mailmate: "You are MailMate, an AI email assistant. Write clear, professional, and effective emails.",
+      hirehelper: "You are HireHelper, an AI career assistant. Help users improve resumes, prepare for interviews, and give career advice.",
+      planner: "You are Planner, an AI study/work planning assistant. Help users create schedules, stay organized, and manage productivity.",
+    };
+
+    const systemMessage = {
+      role: "system",
+      content: systemPrompts[mode] || "You are a helpful AI assistant.",
+    };
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -15,22 +27,13 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",   // fast + affordable model
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-        max_tokens: 200,
+        model: "gpt-4o-mini",
+        messages: [systemMessage, ...messages],
+        max_tokens: 300,
       }),
     });
 
     const data = await response.json();
-
-    if (data.error) {
-      console.error("OpenAI error:", data.error);
-      res.status(500).json({ answer: "⚠️ AI request failed." });
-      return;
-    }
 
     const answer = data.choices?.[0]?.message?.content?.trim() || "⚠️ No reply.";
     res.status(200).json({ answer });
