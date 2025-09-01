@@ -1,14 +1,46 @@
 // pages/api/chat.js
-export default function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
-  const { message = "" } = req.body || {};
-  const m = message.toLowerCase();
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  if (!m.trim()) return res.json({ reply: "Tell me what you want to do." });
-  if (m.includes("email")) return res.json({ reply: "Use MailMate to draft or refine your email. Want me to open it?" });
-  if (m.includes("resume") || m.includes("cv")) return res.json({ reply: "Use HireHelper to structure your resume. Open it now?" });
-  if (m.includes("plan") || m.includes("schedule")) return res.json({ reply: "Try Planner to map your week. Open it?" });
+  try {
+    const { messages = [], system } = req.body;
 
-  // fallback: short helpful tone
-  return res.json({ reply: "Got it. I can help with MailMate (email), HireHelper (resume), and Planner (study/work). Which should we open?" });
+    const systemPrompt =
+      system ||
+      "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully.";
+
+    const payload = {
+      model: "gpt-4o-mini", // or your preferred model
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
+      ],
+      temperature: 0.7,
+    };
+
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error("OpenAI error:", text);
+      return res.status(500).json({ error: "LLM request failed" });
+    }
+
+    const data = await resp.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim() || "";
+
+    return res.status(200).json({ reply });
+  } catch (e) {
+    console.error("Chat API error:", e);
+    return res.status(500).json({ error: "Unexpected server error" });
+  }
 }
