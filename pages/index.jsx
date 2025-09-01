@@ -1,7 +1,7 @@
 // pages/index.jsx (or index.js)
 import Link from "next/link";
 import { useState } from "react";
-import { useLocalState } from "../lib/useLocalState";
+import useLocalState from "../lib/useLocalState";
 
 export default function Home() {
   const [messages, setMessages] = useLocalState("pp.messages", [
