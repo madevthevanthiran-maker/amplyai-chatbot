@@ -1,53 +1,56 @@
 // pages/api/ask.js
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { question } = req.body || {};
-  if (!question || !String(question).trim()) {
-    return res.status(400).json({ error: "Missing question" });
-  }
-
-  // If no key is set, reply with a helpful local fallback (zero cost)
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(200).json({
-      answer:
-        "I can help with MailMate (email), HireHelper (resume), and Planner (study/work). Ask about emails, resumes, or planning—or click one of the buttons above.",
-    });
-  }
-
   try {
+    const { prompt } = JSON.parse(req.body || "{}");
+    if (!prompt || typeof prompt !== "string") {
+      return res.status(400).json({ error: "Missing prompt" });
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return res
+        .status(500)
+        .json({ error: "Missing OPENAI_API_KEY on server" });
+    }
+
+    // Lightweight, fast, and cost-friendly
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.5,
-        max_tokens: 280,
         messages: [
           {
             role: "system",
             content:
-              "You are AmplyAI’s Progress Partner. Answer briefly and helpfully in 2-5 sentences max. When relevant, suggest: MailMate (email), HireHelper (resume), Planner (study/work). Keep it friendly and actionable.",
+              "You are Progress Partner, a concise and friendly assistant. If the user asks about email, resume/CV, or planning, give concrete steps and link back to the relevant tool (MailMate, HireHelper, Planner). Otherwise answer briefly and helpfully.",
           },
-          { role: "user", content: String(question) },
+          { role: "user", content: prompt },
         ],
+        temperature: 0.4,
+        max_tokens: 300,
       }),
     });
 
     if (!r.ok) {
-      const err = await r.text();
-      return res.status(500).json({ error: err || "OpenAI error" });
+      const t = await r.text();
+      return res.status(500).json({ error: `Upstream error: ${t}` });
     }
-    const j = await r.json();
-    const answer = j?.choices?.[0]?.message?.content?.trim() || "Okay.";
-    return res.status(200).json({ answer });
-  } catch (e) {
-    return res.status(500).json({ error: "Chat error" });
+
+    const data = await r.json();
+    const text =
+      data?.choices?.[0]?.message?.content?.trim() ||
+      "Sorry, I couldn’t produce a response.";
+    return res.status(200).json({ text });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Unexpected server error" });
   }
 }
