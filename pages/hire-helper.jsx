@@ -1,7 +1,7 @@
 // pages/hire-helper.jsx
 import Link from "next/link";
 import { useMemo } from "react";
-import { useLocalState } from "../lib/useLocalState";
+import useLocalState from "../lib/useLocalState";
 
 export default function HireHelper() {
   // Persistent fields
