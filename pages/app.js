@@ -13,7 +13,6 @@ const SYSTEMS = {
 export default function AppPage() {
   const [tab, setTab] = React.useState("chat");
 
-  // Optional: read ?tab= from URL (e.g., /app?tab=hirehelper)
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const p = new URLSearchParams(window.location.search);
@@ -22,17 +21,22 @@ export default function AppPage() {
   }, []);
 
   const label = (k) =>
-    k === "hirehelper" ? "HireHelper" :
-    k === "mailmate" ? "MailMate" :
-    k === "planner" ? "Planner" : "Chat";
+    k === "hirehelper" ? "HireHelper (resume)" :
+    k === "mailmate" ? "MailMate (email)" :
+    k === "planner" ? "Planner (study/work)" : "Chat (general)";
 
-  const tabs = ["hirehelper", "mailmate", "planner", "chat"];
+  const tabs = ["chat", "mailmate", "hirehelper", "planner"];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-100">
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="font-semibold">AmplyAI</div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-950 to-gray-900 text-gray-100">
+      {/* Header */}
+      <header className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950/70 backdrop-blur">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 bg-blue-500 rounded-full"></span>
+            <span className="font-semibold">AmplyAI</span>
+            <span className="text-gray-500">— Progress Partner</span>
+          </div>
           <nav className="flex gap-2">
             {tabs.map((key) => (
               <button
@@ -46,8 +50,10 @@ export default function AppPage() {
                     window.history.replaceState({}, "", url.toString());
                   }
                 }}
-                className={`px-3 py-1.5 rounded-xl text-sm capitalize border
-                  ${tab === key ? "bg-gray-900 text-white" : "bg-white hover:bg-gray-50"}`}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition 
+                  ${tab === key
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-800/50 text-gray-300 hover:bg-gray-700/50"}`}
               >
                 {label(key)}
               </button>
@@ -56,18 +62,21 @@ export default function AppPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-6">
-        <ChatPanel
-          tabId={tab}
-          systemPrompt={SYSTEMS[tab]}
-          apiPath="/api/chat"
-          placeholder={
-            tab === "hirehelper" ? "Paste your bullet or job description…" :
-            tab === "mailmate" ? "Draft an email about…" :
-            tab === "planner" ? "Plan my week around…" :
-            "Ask anything…"
-          }
-        />
+      {/* Main */}
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-6 shadow-lg">
+          <ChatPanel
+            tabId={tab}
+            systemPrompt={SYSTEMS[tab]}
+            apiPath="/api/chat"
+            placeholder={
+              tab === "hirehelper" ? "Paste your bullet or job description…" :
+              tab === "mailmate" ? "Draft an email about…" :
+              tab === "planner" ? "Plan my week around…" :
+              "Ask anything…"
+            }
+          />
+        </div>
       </main>
     </div>
   );
