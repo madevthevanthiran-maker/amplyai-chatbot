@@ -1,60 +1,60 @@
 // pages/api/chat.js
+// Simple non-streaming chat endpoint for AmplyAI.
+// Expects: { system?: string, messages: [{role, content}] }
+// Returns: { content: string }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    // Surface a clear message in dev; in prod you'll just see the "error" bubble.
+    return res
+      .status(500)
+      .json({ error: "Missing OPENAI_API_KEY environment variable." });
   }
 
   try {
-    const { messages = [], system } = req.body;
+    const { system, messages = [] } = req.body || {};
 
-    // Trim history to keep payload small & cheaper (e.g., last 12)
-    const trimmed = messages.slice(-12);
+    // Build message array (prepend system if provided and not already included)
+    const chatMessages = Array.isArray(messages) ? [...messages] : [];
+    if (system && (!chatMessages.length || chatMessages[0]?.role !== "system")) {
+      chatMessages.unshift({ role: "system", content: system });
+    }
 
-    const systemPrompt =
-      system ||
-      "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully.";
-
-    const payload = {
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...trimmed.map((m) => ({ role: m.role, content: m.content })),
-      ],
-      temperature: 0.7,
-    };
-
+    // Call OpenAI Chat Completions
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        model: "gpt-4o-mini", // pick your model here
+        temperature: 0.7,
+        messages: chatMessages.map(({ role, content }) => ({ role, content })),
+      }),
     });
 
     if (!resp.ok) {
-      const text = await resp.text();
-      console.error("OpenAI error:", text);
-      // surface rate limit nicely
-      if (resp.status === 429) {
-        return res
-          .status(429)
-          .json({ error: "Rate limited. Please try again shortly." });
-      }
-      return res.status(500).json({ error: "LLM request failed" });
+      const errText = await resp.text().catch(() => "");
+      return res
+        .status(resp.status)
+        .json({ error: `Provider error (${resp.status}): ${errText}` });
     }
 
     const data = await resp.json();
-    const reply = data?.choices?.[0]?.message?.content?.trim() || "";
 
-    return res.status(200).json({ reply });
-  } catch (e) {
-    console.error("Chat API error:", e);
-    return res.status(500).json({ error: "Unexpected server error" });
+    const content =
+      data?.choices?.[0]?.message?.content ??
+      "Sorry, I couldn't generate a response.";
+
+    // Frontend expects { content }
+    return res.status(200).json({ content });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || "Server error" });
   }
 }
