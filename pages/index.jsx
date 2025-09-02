@@ -1,369 +1,143 @@
-// pages/index.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
-
-const TABS = [
-  { id: "chat", label: "Chat (general)" },
-  { id: "mail", label: "MailMate (email)" },
-  { id: "hire", label: "HireHelper (resume)" },
-  { id: "plan", label: "Planner (study/work)" },
-];
-
-// System prompts used per tab.
-// Feel free to tweak the wording later.
-const SYSTEM_PROMPTS = {
-  chat:
-    "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully. If a user asks follow-ups, keep context.",
-  mail: `
-You are MailMate. Generate clean, professional emails based on the user's ask.
-- Keep it concise, clear and friendly.
-- Return just the email body (no extra commentary).
-- Add an email subject line at the top as "Subject: ...".
-- Offer 2 variants if the user asks for options.
-`,
-  hire: `
-You are HireHelper. Help users write bullets and summaries for resumes.
-- Use action verbs, impact, metrics when possible.
-- Keep bullets short (1–2 lines).
-- Return clean, copy-pasteable text (no extra commentary).
-`,
-  plan: `
-You are Planner. Help users plan their next two weeks for study/work.
-- Ask for hours/day, available days, deadlines.
-- Suggest a simple 14-day plan broken into days and tasks, compact and clear.
-`,
-};
+// pages/index.js
+import Head from "next/head";
+import Link from "next/link";
 
 export default function Home() {
-  // Which tab is active
-  const [mode, setMode] = useState("chat");
-
-  // Preserve separate conversations per tab so switching doesn’t wipe the history
-  const [convos, setConvos] = useState({
-    chat: [],
-    mail: [],
-    hire: [],
-    plan: [],
-  });
-
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
-
-  const messages = convos[mode];
-
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, mode]);
-
-  // Compose a user message and call the /api/chat endpoint with the right system prompt
-  const send = async () => {
-    if (!input.trim() || loading) return;
-
-    const newUserMsg = { role: "user", content: input.trim() };
-    const next = [...messages, newUserMsg];
-
-    setConvos((prev) => ({ ...prev, [mode]: next }));
-    setInput("");
-    setLoading(true);
-
-    try {
-      const resp = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system: SYSTEM_PROMPTS[mode],
-          messages: next,
-        }),
-      });
-
-      if (!resp.ok) {
-        const text = await resp.text();
-        console.error("Chat API failed:", text);
-        throw new Error("Chat API failed");
-      }
-
-      const data = await resp.json();
-      const replyText = data?.reply || "Sorry, I couldn’t generate a reply.";
-
-      setConvos((prev) => ({
-        ...prev,
-        [mode]: [...prev[mode], { role: "assistant", content: replyText }],
-      }));
-    } catch (e) {
-      console.error(e);
-      setConvos((prev) => ({
-        ...prev,
-        [mode]: [
-          ...prev[mode],
-          { role: "assistant", content: "Hmm... I couldn’t reply right now. Try again?" },
-        ],
-      }));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const placeholder = useMemo(() => {
-    switch (mode) {
-      case "mail":
-        return "e.g., write a concise follow-up email after a demo…";
-      case "hire":
-        return "e.g., turn this experience into 3 resume bullets…";
-      case "plan":
-        return "e.g., plan 2 weeks for finals, 2h/day, Mon-Fri…";
-      default:
-        return "Type a message…";
-    }
-  }, [mode]);
+  const features = [
+    {
+      key: "hirehelper",
+      name: "HireHelper",
+      blurb: "Turn messy experience into recruiter-ready bullets. Quantified. STAR-tight.",
+      cta: "Open HireHelper",
+    },
+    {
+      key: "mailmate",
+      name: "MailMate",
+      blurb: "Write clear, outcome-driven emails with subject lines and variants.",
+      cta: "Open MailMate",
+    },
+    {
+      key: "planner",
+      name: "Planner",
+      blurb: "Break goals into doable tasks and schedules with realistic buffers.",
+      cta: "Open Planner",
+    },
+    {
+      key: "chat",
+      name: "Progress Partner",
+      blurb: "Your general assistant for life & work. Quick answers, no fuss.",
+      cta: "Open Chat",
+    },
+  ];
 
   return (
-    <div className="page">
-      <header className="topbar">
-        <div className="brand">
-          <span className="dot" /> <span className="brandName">AmplyAI</span>
-          <span className="divider">—</span>
-          <span className="title">Progress Partner</span>
-        </div>
+    <>
+      <Head>
+        <title>AmplyAI — Progress Partner</title>
+        <meta name="description" content="Less Stress. More Progress. Multi-tab AI that helps you land the job, write better emails, plan your week, and get answers fast." />
+        <meta property="og:title" content="AmplyAI — Progress Partner" />
+        <meta property="og:description" content="Less Stress. More Progress." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://www.amplyai.org/" />
+        <meta property="og:image" content="https://www.amplyai.org/og.png" />
+      </Head>
 
-        <nav className="tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={`tab ${mode === t.id ? "active" : ""}`}
-              onClick={() => setMode(t.id)}
+      <main className="min-h-screen bg-gradient-to-b from-white to-gray-50">
+        {/* Hero */}
+        <section className="max-w-6xl mx-auto px-6 pt-20 pb-10 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-gray-600 bg-white">
+            MVP · Privacy-friendly · No sign-up required
+          </div>
+          <h1 className="mt-6 text-4xl md:text-6xl font-extrabold tracking-tight">
+            Less Stress. <span className="text-gray-500">More Progress.</span>
+          </h1>
+          <p className="mt-4 text-lg md:text-xl text-gray-600 max-w-2xl mx-auto">
+            A multi-tab AI that helps you <strong>land the job</strong>, <strong>write better emails</strong>, 
+            <strong>plan your week</strong>, and <strong>get answers</strong> — all in one clean interface.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href="/app?tab=hirehelper"
+              className="px-5 py-3 rounded-xl bg-gray-900 text-white text-sm hover:opacity-90"
             >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-      </header>
-
-      <main className="shell">
-        <div className="chatCard">
-          {/* Optional tiny header buttons for quick context */}
-          <div className="miniTabs">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                className={`miniTab ${mode === t.id ? "active" : ""}`}
-                onClick={() => setMode(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
+              Try HireHelper
+            </Link>
+            <Link
+              href="/app?tab=chat"
+              className="px-5 py-3 rounded-xl border text-sm bg-white hover:bg-gray-50"
+            >
+              Open Progress Partner
+            </Link>
           </div>
+          <p className="mt-3 text-xs text-gray-500">No sign-up. Conversations stay on your device.</p>
+        </section>
 
-          <div className="chatWindow">
-            {messages.length === 0 && (
-              <div className="starter">
-                <p className="starterTitle">
-                  Hey! I’m your Progress Partner. What do you want to do today?
-                </p>
-                <ul className="starterList">
-                  <li>Write a great email (MailMate)</li>
-                  <li>Build/refresh your resume (HireHelper)</li>
-                  <li>Plan study/work for two weeks (Planner)</li>
-                  <li>Or just ask anything in Chat (general)</li>
-                </ul>
-              </div>
-            )}
-
-            {messages.map((m, i) => (
-              <div key={i} className={`msgRow ${m.role}`}>
-                <div className="avatar">{m.role === "assistant" ? "PP" : "You"}</div>
-                <div className="bubble">
-                  <pre className="content">{m.content}</pre>
+        {/* Feature grid */}
+        <section className="max-w-6xl mx-auto px-6 pb-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {features.map((f) => (
+              <div key={f.key} className="rounded-2xl border bg-white p-4 flex flex-col justify-between">
+                <div>
+                  <h3 className="font-semibold">{f.name}</h3>
+                  <p className="mt-2 text-sm text-gray-600">{f.blurb}</p>
                 </div>
+                <Link
+                  href={`/app?tab=${f.key}`}
+                  className="mt-4 inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  {f.cta}
+                </Link>
               </div>
             ))}
-            <div ref={bottomRef} />
           </div>
+        </section>
 
-          <div className="inputRow">
-            <input
-              className="input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder={placeholder}
-            />
-            <button className="send" onClick={send} disabled={loading}>
-              {loading ? "..." : "Send"}
-            </button>
+        {/* Social proof / mini testimonials placeholders */}
+        <section className="max-w-6xl mx-auto px-6 py-8">
+          <div className="rounded-2xl border bg-white p-6">
+            <p className="text-sm text-gray-600">
+              “AmplyAI helped me turn my internship notes into clean resume bullets in minutes.” — <span className="font-medium">Beta user</span>
+            </p>
+            <p className="mt-2 text-sm text-gray-600">
+              “Planner actually made my week doable. Saved me from over-scheduling.” — <span className="font-medium">Beta user</span>
+            </p>
           </div>
-        </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="max-w-6xl mx-auto px-6 py-10">
+          <h2 className="text-xl font-semibold">FAQ</h2>
+          <div className="mt-4 grid md:grid-cols-2 gap-6">
+            <div>
+              <h3 className="font-medium">Do I need an account?</h3>
+              <p className="text-sm text-gray-600 mt-1">No. The MVP stores conversations locally in your browser.</p>
+            </div>
+            <div>
+              <h3 className="font-medium">Is my data private?</h3>
+              <p className="text-sm text-gray-600 mt-1">We don’t collect personal data. Basic usage is measured via Plausible (privacy-first analytics).</p>
+            </div>
+            <div>
+              <h3 className="font-medium">What’s coming next?</h3>
+              <p className="text-sm text-gray-600 mt-1">Cloud history, account login, and pro templates for resumes, emails, and planning.</p>
+            </div>
+            <div>
+              <h3 className="font-medium">Is it free?</h3>
+              <p className="text-sm text-gray-600 mt-1">Yes, during soft launch. Paid tiers later.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="max-w-6xl mx-auto px-6 pb-16">
+          <div className="rounded-2xl border bg-white p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <span className="text-sm text-gray-600">© {new Date().getFullYear()} AmplyAI — Progress Partner</span>
+            <div className="flex gap-3">
+              <Link href="/app?tab=chat" className="text-sm underline">Open App</Link>
+              <Link href="mailto:hello@amplyai.org" className="text-sm underline">Contact</Link>
+            </div>
+          </div>
+        </footer>
       </main>
-
-      <style jsx>{`
-        .page {
-          min-height: 100vh;
-          background: radial-gradient(1200px 700px at 20% -10%, #0b1b3a55, transparent),
-            radial-gradient(900px 600px at 80% -10%, #0b1b3a55, transparent), #0b1526;
-          color: #e9eefc;
-        }
-        .topbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 16px 24px;
-        }
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          opacity: 0.95;
-        }
-        .dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #56a8ff;
-        }
-        .brandName {
-          font-weight: 700;
-        }
-        .divider {
-          opacity: 0.5;
-        }
-        .title {
-          opacity: 0.8;
-        }
-        .tabs {
-          display: flex;
-          gap: 8px;
-        }
-        .tab {
-          padding: 8px 14px;
-          border-radius: 999px;
-          border: 1px solid #2c3d62;
-          background: #0f1d34;
-          color: #c9d8ff;
-        }
-        .tab.active {
-          background: #2b59ff22;
-          border-color: #5b7cff;
-          color: #e9efff;
-        }
-        .shell {
-          display: flex;
-          justify-content: center;
-          padding: 24px;
-        }
-        .chatCard {
-          width: 100%;
-          max-width: 980px;
-          background: #0e1a2d;
-          border: 1px solid #1f2c4a;
-          border-radius: 16px;
-          box-shadow: 0 6px 40px rgba(5, 12, 28, 0.5);
-          padding: 14px;
-        }
-        .miniTabs {
-          display: flex;
-          gap: 8px;
-          padding: 4px 6px 10px;
-        }
-        .miniTab {
-          padding: 6px 10px;
-          border-radius: 10px;
-          border: 1px solid #203356;
-          background: #0f1d34;
-          color: #a9b9e9;
-          font-size: 12px;
-        }
-        .miniTab.active {
-          background: #2b59ff22;
-          border-color: #5b7cff;
-          color: #e9efff;
-        }
-        .chatWindow {
-          height: 56vh;
-          overflow: auto;
-          background: #0b1524;
-          border: 1px solid #17294a;
-          border-radius: 12px;
-          padding: 14px;
-        }
-        .starter {
-          opacity: 0.9;
-          padding: 6px 2px 8px;
-        }
-        .starterTitle {
-          margin: 0 0 6px;
-          font-weight: 600;
-        }
-        .starterList {
-          margin: 0;
-          padding-left: 18px;
-          opacity: 0.85;
-        }
-        .msgRow {
-          display: flex;
-          gap: 10px;
-          margin: 10px 0;
-        }
-        .msgRow .avatar {
-          min-width: 34px;
-          height: 34px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          font-size: 12px;
-          background: #112246;
-          color: #b9cbff;
-          border: 1px solid #1c2c52;
-        }
-        .msgRow.user .avatar {
-          background: #1a2644;
-          color: #dfe7ff;
-        }
-        .bubble {
-          background: #0f1e3a;
-          border: 1px solid #1c2c52;
-          padding: 10px 12px;
-          border-radius: 12px;
-          max-width: 80%;
-          white-space: pre-wrap;
-        }
-        .content {
-          margin: 0;
-          font-family: ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono",
-            "Roboto Mono", monospace;
-          font-size: 13.5px;
-          line-height: 1.45;
-        }
-        .inputRow {
-          display: flex;
-          gap: 10px;
-          margin-top: 12px;
-        }
-        .input {
-          flex: 1;
-          padding: 14px 16px;
-          border-radius: 12px;
-          border: 1px solid #21325a;
-          background: #0e1a2d;
-          color: #e9eefc;
-          outline: none;
-        }
-        .send {
-          padding: 0 18px;
-          border-radius: 12px;
-          background: #2c55ff;
-          color: white;
-          border: none;
-          min-width: 84px;
-        }
-        .send:disabled {
-          opacity: 0.6;
-        }
-      `}</style>
-    </div>
+    </>
   );
 }
