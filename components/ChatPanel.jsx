@@ -2,12 +2,7 @@
 import React from "react";
 import { loadMessages, saveMessages, clearMessages, newId } from "@/lib/persistedChat";
 
-export default function ChatPanel({
-  tabId,
-  systemPrompt,
-  apiPath = "/api/chat",
-  placeholder = "Type your message…",
-}) {
+export default function ChatPanel({ tabId, systemPrompt, apiPath = "/api/chat", placeholder = "Type your message…" }) {
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -50,7 +45,7 @@ export default function ChatPanel({
       const modelContent =
         data?.content ?? data?.choices?.[0]?.message?.content ?? "Sorry, I didn’t catch that.";
       setMessages((curr) => [...curr, { id: newId(), role: "assistant", content: modelContent, ts: Date.now() }]);
-    } catch (e) {
+    } catch {
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
@@ -71,9 +66,7 @@ export default function ChatPanel({
         <h2 className="text-lg font-semibold">{label}</h2>
         <div className="flex items-center gap-2">
           <button onClick={reset} className="text-sm px-3 py-1 rounded-lg border hover:bg-gray-50">Clear</button>
-          {error && (
-            <button onClick={retry} className="text-sm px-3 py-1 rounded-lg border hover:bg-gray-50">Retry</button>
-          )}
+          {error && <button onClick={retry} className="text-sm px-3 py-1 rounded-lg border hover:bg-gray-50">Retry</button>}
         </div>
       </div>
 
@@ -106,9 +99,7 @@ export default function ChatPanel({
         </button>
       </form>
 
-      <div className="text-xs text-gray-500">
-        Conversations auto-save locally per tab. Cloud history later.
-      </div>
+      <div className="text-xs text-gray-500">Conversations auto-save locally per tab.</div>
     </div>
   );
 }
