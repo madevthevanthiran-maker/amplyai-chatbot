@@ -7,7 +7,7 @@ export default function ChatPanel({
   tabId,
   systemPrompt,
   apiPath = "/api/chat",
-  placeholder = "Type your message…",
+  placeholder = "Ask anything…",
 }) {
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
@@ -16,8 +16,47 @@ export default function ChatPanel({
   const [lastUserMsg, setLastUserMsg] = React.useState(null);
   const [copiedId, setCopiedId] = React.useState(null);
 
+  const inputRef = React.useRef(null);
+
+  // Load & persist per-tab conversation
   React.useEffect(() => { setMessages(loadMessages(tabId)); }, [tabId]);
   React.useEffect(() => { saveMessages(tabId, messages); }, [tabId, messages]);
+
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const onKey = (e) => {
+      const meta = e.ctrlKey || e.metaKey;
+
+      // Focus with '/'
+      if (e.key === "/" && !e.target.closest("input,textarea")) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        return;
+      }
+
+      // Send with Cmd/Ctrl + Enter
+      if (meta && e.key === "Enter") {
+        e.preventDefault();
+        if (!loading) send();
+        return;
+      }
+
+      // Clear chat with Cmd/Ctrl + L
+      if (meta && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        if (confirm("Clear this chat?")) reset();
+        return;
+      }
+
+      // Blur with Esc
+      if (e.key === "Escape") {
+        inputRef.current?.blur();
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [loading]);
 
   const send = async (text) => {
     const content = (text ?? input).trim();
@@ -157,7 +196,7 @@ export default function ChatPanel({
         )}
       </div>
 
-      {/* Input */}
+      {/* Input + actions */}
       <form
         className="flex items-center gap-2"
         onSubmit={(e) => {
@@ -166,6 +205,7 @@ export default function ChatPanel({
         }}
       >
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={placeholder}
@@ -173,13 +213,33 @@ export default function ChatPanel({
           className="flex-1 rounded-full border border-gray-700 bg-gray-900 px-4 py-2 text-sm text-gray-100
             placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50"
         />
-        <button
-          disabled={loading || !input.trim()}
-          className="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 disabled:opacity-50"
-        >
-          {loading ? "…" : "Send"}
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={reset}
+            className="px-4 py-2 rounded-full border border-gray-700 text-sm text-gray-200 hover:bg-gray-800/70"
+            title="Start a new chat"
+          >
+            New chat
+          </button>
+
+          <button
+            disabled={loading || !input.trim()}
+            className="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 disabled:opacity-50"
+          >
+            {loading ? "…" : "Send"}
+          </button>
+        </div>
       </form>
+
+      {/* helper hint */}
+      <div className="text-[11px] text-gray-500">
+        Shortcuts: <span className="font-medium text-gray-300">/</span> focus ·{" "}
+        <span className="font-medium text-gray-300">⌘/Ctrl + Enter</span> send ·{" "}
+        <span className="font-medium text-gray-300">⌘/Ctrl + L</span> clear ·{" "}
+        <span className="font-medium text-gray-300">Esc</span> blur
+      </div>
     </div>
   );
 }
