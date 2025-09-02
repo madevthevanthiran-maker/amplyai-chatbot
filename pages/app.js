@@ -1,20 +1,60 @@
-// pages/app.js  (only the relevant additions shown)
+// pages/app.js
 import Head from "next/head";
 import React from "react";
+import ChatPanel from "@/components/ChatPanel";
 import CommandMenu from "@/components/CommandMenu";
 import FeedbackButton from "@/components/FeedbackButton";
-// …your other imports
+import { track } from "@/lib/analytics";
+
+const TABS = [
+  { key: "chat", label: "Chat (general)" },
+  { key: "mailmate", label: "MailMate (email)" },
+  { key: "hirehelper", label: "HireHelper (resume)" },
+  { key: "planner", label: "Planner (study/work)" },
+];
+const VALID_KEYS = new Set(TABS.map((t) => t.key));
+
+// System prompts per tab (lightweight, tweak as you like)
+const SYSTEM = {
+  chat:
+    "You are AmplyAI’s general assistant (Progress Partner). Be concise, helpful, and friendly.",
+  mailmate:
+    "You are MailMate, an email assistant. Write clear, outcome-driven emails with strong subject lines and short, skimmable paragraphs. Suggest variants when helpful.",
+  hirehelper:
+    "You are HireHelper, a resume assistant. Convert messy notes into concise, quantified resume bullets. Prefer action verbs and measurable results (impact).",
+  planner:
+    "You are Planner, a study/work planning assistant. Break goals into realistic tasks, schedule them over the next two weeks with buffers, and call out over-commitments.",
+};
 
 export default function AppPage() {
-  // you already have these states; adapt names if different
-  const [tab, setTab] = React.useState("chat"); // or whatever you use
-  const tabs = [
-    { key: "chat", label: "Chat (general)" },
-    { key: "mailmate", label: "MailMate (email)" },
-    { key: "hirehelper", label: "HireHelper (resume)" },
-    { key: "planner", label: "Planner (study/work)" },
-  ];
+  // read ?tab= from URL on mount
+  const [tab, setTab] = React.useState("chat");
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get("tab");
+    if (q && VALID_KEYS.has(q)) setTab(q);
+  }, []);
 
+  // keep URL in sync when tab changes (so refresh preserves tab)
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("tab") !== tab) {
+      url.searchParams.set("tab", tab);
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [tab]);
+
+  const handleSelectTab = (key) => {
+    if (!VALID_KEYS.has(key)) return; // ignore bad values
+    setTab(key);
+    try {
+      track("tab_select", { tab: key });
+    } catch {}
+  };
+
+  // Command menu open state + keyboard toggle
   const [cmdOpen, setCmdOpen] = React.useState(false);
   React.useEffect(() => {
     const onKey = (e) => {
@@ -27,15 +67,11 @@ export default function AppPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const onSelectTab = (key) => {
-    if (key === "__noop__") return;
-    setTab(key);
-    try { window?.track?.("tab_select", { tab: key }); } catch {}
-  };
-
   return (
     <>
-      <Head><title>Progress Partner</title></Head>
+      <Head>
+        <title>Progress Partner — AmplyAI</title>
+      </Head>
 
       {/* Header */}
       <div className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950/70 backdrop-blur">
@@ -44,9 +80,26 @@ export default function AppPage() {
           <span className="font-semibold">AmplyAI</span>
           <span className="text-gray-400">— Progress Partner</span>
 
-          {/* tab pills (your existing UI) */}
+          {/* Tab pills */}
+          <div className="ml-6 hidden md:flex items-center gap-2">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => handleSelectTab(t.key)}
+                className={`px-3 py-1.5 rounded-full text-sm border transition
+                  ${
+                    tab === t.key
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-transparent text-gray-300 border-gray-700 hover:bg-gray-800/60"
+                  }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Right side actions */}
           <div className="ml-auto flex items-center gap-2">
-            {/* feedback button */}
             <FeedbackButton tabId={tab} />
             <button
               onClick={() => setCmdOpen(true)}
@@ -59,15 +112,48 @@ export default function AppPage() {
         </div>
       </div>
 
-      {/* … your existing body renders the selected tab … */}
+      {/* Body */}
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        {tab === "chat" && (
+          <ChatPanel
+            tabId="chat"
+            systemPrompt={SYSTEM.chat}
+            placeholder="Ask anything…"
+          />
+        )}
 
-      {/* Command menu overlay */}
+        {tab === "mailmate" && (
+          <ChatPanel
+            tabId="mailmate"
+            systemPrompt={SYSTEM.mailmate}
+            placeholder="Paste context or draft, then say what you need…"
+          />
+        )}
+
+        {tab === "hirehelper" && (
+          <ChatPanel
+            tabId="hirehelper"
+            systemPrompt={SYSTEM.hirehelper}
+            placeholder="Paste your experience/notes. I’ll turn them into resume bullets…"
+          />
+        )}
+
+        {tab === "planner" && (
+          <ChatPanel
+            tabId="planner"
+            systemPrompt={SYSTEM.planner}
+            placeholder="What do you need to get done over the next two weeks?"
+          />
+        )}
+      </main>
+
+      {/* Command palette */}
       <CommandMenu
         open={cmdOpen}
         onClose={() => setCmdOpen(false)}
-        tabs={tabs}
+        tabs={TABS}
         current={tab}
-        onSelect={onSelectTab}
+        onSelect={handleSelectTab}
       />
     </>
   );
