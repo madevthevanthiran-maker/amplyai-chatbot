@@ -124,16 +124,19 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Social proof — Option A (clean quotes, no attribution) */}
+        {/* Social proof — human-style beta user quotes */}
         <section className="max-w-6xl mx-auto px-4 py-8">
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-6 shadow-lg space-y-2">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-6 shadow-lg space-y-4">
             <p className="text-sm text-gray-300">
-              “AmplyAI helped me turn my internship notes into clean resume
-              bullets in minutes.”
+              “I dumped my messy internship notes into AmplyAI and it turned
+              them into clean, recruiter-ready bullets in minutes. Way easier
+              than staring at a blank page.”{" "}
+              <span className="text-gray-400">— Beta user</span>
             </p>
             <p className="text-sm text-gray-300">
-              “Planner actually made my week doable. Saved me from
-              over-scheduling.”
+              “The Planner actually made my week doable. It caught where I was
+              over-scheduling myself and helped me spread things out. Total
+              lifesaver.” <span className="text-gray-400">— Beta user</span>
             </p>
           </div>
         </section>
