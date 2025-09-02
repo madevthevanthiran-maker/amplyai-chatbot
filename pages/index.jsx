@@ -1,202 +1,95 @@
 // pages/index.jsx
-import Head from "next/head";
 import Link from "next/link";
 
 export default function Home() {
-  const features = [
-    {
-      key: "hirehelper",
-      name: "HireHelper",
-      blurb:
-        "Turn messy experience into recruiter-ready bullets. Quantified, results-driven.",
-      cta: "Open HireHelper",
-    },
-    {
-      key: "mailmate",
-      name: "MailMate",
-      blurb:
-        "Write clear, outcome-driven emails with subject lines and variants.",
-      cta: "Open MailMate",
-    },
-    {
-      key: "planner",
-      name: "Planner",
-      blurb:
-        "Break goals into doable tasks and schedules with realistic buffers.",
-      cta: "Open Planner",
-    },
-    {
-      key: "chat",
-      name: "Progress Partner",
-      blurb: "Your general assistant for life & work. Quick answers, no fuss.",
-      cta: "Open Chat",
-    },
-  ];
-
   return (
-    <>
-      <Head>
-        <title>AmplyAI — Progress Partner</title>
-        <meta
-          name="description"
-          content="Less Stress. More Progress. Multi-tab AI to land the job, write better emails, plan your week, and get answers — in a clean dark interface."
+    <div className="min-h-screen bg-gray-950 text-gray-100">
+      {/* Hero */}
+      <section className="max-w-4xl mx-auto px-6 py-20 text-center">
+        <h1 className="text-4xl sm:text-5xl font-bold mb-4">
+          Less Stress. <span className="text-blue-500">More Progress.</span>
+        </h1>
+        <p className="text-lg text-gray-400 max-w-2xl mx-auto mb-8">
+          A multi-tab AI that helps you{" "}
+          <span className="font-semibold text-gray-200">land the job</span>,{" "}
+          <span className="font-semibold text-gray-200">write better emails</span>,{" "}
+          <span className="font-semibold text-gray-200">plan your week</span>, and{" "}
+          <span className="font-semibold text-gray-200">get answers</span> — all in
+          one clean interface.
+        </p>
+        <div className="flex justify-center gap-4">
+          <Link href="/app">
+            <button className="px-6 py-3 rounded-full bg-blue-600 hover:bg-blue-500 font-medium">
+              Open App
+            </button>
+          </Link>
+          <a
+            href="#features"
+            className="px-6 py-3 rounded-full border border-gray-700 hover:bg-gray-800 font-medium"
+          >
+            Learn More
+          </a>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="features" className="max-w-5xl mx-auto px-6 py-16 grid md:grid-cols-2 gap-8">
+        <FeatureCard
+          title="HireHelper"
+          desc="Turn messy experience into recruiter-ready bullets. Quantified, STAR-tight."
+          link="/app?tab=hirehelper"
         />
-        <meta property="og:title" content="AmplyAI — Progress Partner" />
-        <meta property="og:description" content="Less Stress. More Progress." />
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://www.amplyai.org/" />
-        <meta property="og:image" content="/og.png" />
-      </Head>
+        <FeatureCard
+          title="MailMate"
+          desc="Write clear, outcome-driven emails with subject lines and variants."
+          link="/app?tab=mailmate"
+        />
+        <FeatureCard
+          title="Planner"
+          desc="Break goals into doable tasks and schedules with realistic buffers."
+          link="/app?tab=planner"
+        />
+        <FeatureCard
+          title="Progress Partner"
+          desc="Your general assistant for life & work. Quick answers, no fuss."
+          link="/app?tab=chat"
+        />
+      </section>
 
-      <main className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-950 to-gray-900 text-gray-100">
-        {/* Header */}
-        <header className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950/70 backdrop-blur">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 bg-blue-500 rounded-full" />
-              <span className="font-semibold">AmplyAI</span>
-              <span className="text-gray-400">— Progress Partner</span>
-            </div>
-            <nav className="flex gap-2">
-              <Link href="/app?tab=chat" legacyBehavior>
-                <a className="px-4 py-1.5 rounded-full text-sm font-medium bg-gray-800/60 text-gray-200 hover:bg-gray-700/60">
-                  Open App
-                </a>
-              </Link>
-              <Link href="/privacy" legacyBehavior>
-                <a className="px-4 py-1.5 rounded-full text-sm font-medium bg-gray-800/60 text-gray-300 hover:bg-gray-700/60">
-                  Privacy
-                </a>
-              </Link>
-            </nav>
-          </div>
-        </header>
+      {/* Testimonials */}
+      <section className="bg-gray-900 py-16 px-6">
+        <div className="max-w-3xl mx-auto space-y-8">
+          <blockquote className="bg-gray-800 p-6 rounded-xl text-gray-300 italic">
+            “I dumped my messy internship notes into AmplyAI and it turned them into
+            clean, recruiter-ready bullets in minutes. Way easier than staring at a
+            blank page.” <span className="block mt-2 text-gray-400">— Beta user</span>
+          </blockquote>
+          <blockquote className="bg-gray-800 p-6 rounded-xl text-gray-300 italic">
+            “The Planner actually made my week doable. It helped me avoid
+            over-scheduling and added real buffers around things. Total lifesaver.”{" "}
+            <span className="block mt-2 text-gray-400">— Beta user</span>
+          </blockquote>
+        </div>
+      </section>
 
-        {/* Hero */}
-        <section className="max-w-6xl mx-auto px-4 pt-16 pb-10 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-gray-800 bg-gray-900/70 px-3 py-1 text-xs text-gray-300">
-            MVP · Privacy-friendly · No sign-up required
-          </div>
-          <h1 className="mt-6 text-4xl md:text-6xl font-extrabold tracking-tight">
-            Less Stress. <span className="text-gray-400">More Progress.</span>
-          </h1>
-          <p className="mt-4 text-lg md:text-xl text-gray-300 max-w-2xl mx-auto">
-            A multi-tab AI that helps you <strong>land the job</strong>,{" "}
-            <strong>write better emails</strong>, <strong>plan your week</strong>
-            , and <strong>get answers</strong> — all in one clean interface.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/app?tab=hirehelper" legacyBehavior>
-              <a className="px-5 py-3 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500">
-                Try HireHelper
-              </a>
-            </Link>
-            <Link href="/app?tab=chat" legacyBehavior>
-              <a className="px-5 py-3 rounded-full border border-gray-700 bg-gray-900/70 text-sm text-gray-200 hover:bg-gray-800/70">
-                Open Progress Partner
-              </a>
-            </Link>
-          </div>
-          <p className="mt-3 text-xs text-gray-400">
-            No sign-up. Conversations stay on your device.
-          </p>
-        </section>
+      {/* Footer */}
+      <footer className="text-center py-6 text-sm text-gray-500">
+        © {new Date().getFullYear()} AmplyAI · Privacy-friendly · No sign-up required
+      </footer>
+    </div>
+  );
+}
 
-        {/* Feature grid */}
-        <section className="max-w-6xl mx-auto px-4 pb-8">
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {features.map((f) => (
-              <div
-                key={f.key}
-                className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-4 flex flex-col justify-between shadow-lg"
-              >
-                <div>
-                  <h3 className="font-semibold text-gray-100">{f.name}</h3>
-                  <p className="mt-2 text-sm text-gray-300">{f.blurb}</p>
-                </div>
-                <Link href={`/app?tab=${f.key}`} legacyBehavior>
-                  <a className="mt-4 inline-flex items-center justify-center rounded-full border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70">
-                    {f.cta}
-                  </a>
-                </Link>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Social proof — human-style beta user quotes */}
-        <section className="max-w-6xl mx-auto px-4 py-8">
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-6 shadow-lg space-y-4">
-            <p className="text-sm text-gray-300">
-              “I dumped my messy internship notes into AmplyAI and it turned
-              them into clean, recruiter-ready bullets in minutes. Way easier
-              than staring at a blank page.”{" "}
-              <span className="text-gray-400">— Beta user</span>
-            </p>
-            <p className="text-sm text-gray-300">
-              “The Planner actually made my week doable. It caught where I was
-              over-scheduling myself and helped me spread things out. Total
-              lifesaver.” <span className="text-gray-400">— Beta user</span>
-            </p>
-          </div>
-        </section>
-
-        {/* FAQ */}
-        <section className="max-w-6xl mx-auto px-4 py-10">
-          <h2 className="text-xl font-semibold text-gray-100">FAQ</h2>
-          <div className="mt-4 grid md:grid-cols-2 gap-6">
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
-              <h3 className="font-medium text-gray-100">Do I need an account?</h3>
-              <p className="text-sm text-gray-300 mt-1">
-                No. The MVP stores conversations locally in your browser.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
-              <h3 className="font-medium text-gray-100">Is my data private?</h3>
-              <p className="text-sm text-gray-300 mt-1">
-                We don’t collect personal data. Basic usage is measured via
-                Plausible (privacy-first analytics).
-              </p>
-            </div>
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
-              <h3 className="font-medium text-gray-100">What’s coming next?</h3>
-              <p className="text-sm text-gray-300 mt-1">
-                Cloud history, account login, and pro templates for resumes,
-                emails, and planning.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
-              <h3 className="font-medium text-gray-100">Is it free?</h3>
-              <p className="text-sm text-gray-300 mt-1">
-                Yes, during soft launch. Paid tiers later.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Footer */}
-        <footer className="max-w-6xl mx-auto px-4 pb-16">
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
-            <span className="text-sm text-gray-400">
-              © {new Date().getFullYear()} AmplyAI — Progress Partner
-            </span>
-            <div className="flex gap-3">
-              <Link href="/app?tab=chat" legacyBehavior>
-                <a className="text-sm underline text-gray-300">Open App</a>
-              </Link>
-              <Link href="/privacy" legacyBehavior>
-                <a className="text-sm underline text-gray-400">Privacy</a>
-              </Link>
-              <a
-                href="mailto:hello@amplyai.org"
-                className="text-sm underline text-gray-400"
-              >
-                Contact
-              </a>
-            </div>
-          </div>
-        </footer>
-      </main>
-    </>
+function FeatureCard({ title, desc, link }) {
+  return (
+    <div className="p-6 rounded-xl border border-gray-800 bg-gray-900 shadow hover:shadow-lg transition">
+      <h3 className="text-xl font-semibold mb-2">{title}</h3>
+      <p className="text-gray-400 mb-4">{desc}</p>
+      <Link href={link}>
+        <button className="px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-500 text-sm font-medium">
+          Open {title}
+        </button>
+      </Link>
+    </div>
   );
 }
