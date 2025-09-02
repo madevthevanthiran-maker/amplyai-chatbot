@@ -14,7 +14,6 @@ const TABS = [
 ];
 const VALID_KEYS = new Set(TABS.map((t) => t.key));
 
-// System prompts per tab (lightweight, tweak as you like)
 const SYSTEM = {
   chat:
     "You are AmplyAI’s general assistant (Progress Partner). Be concise, helpful, and friendly.",
@@ -27,8 +26,8 @@ const SYSTEM = {
 };
 
 export default function AppPage() {
-  // read ?tab= from URL on mount
   const [tab, setTab] = React.useState("chat");
+
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
@@ -36,7 +35,6 @@ export default function AppPage() {
     if (q && VALID_KEYS.has(q)) setTab(q);
   }, []);
 
-  // keep URL in sync when tab changes (so refresh preserves tab)
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
@@ -47,14 +45,11 @@ export default function AppPage() {
   }, [tab]);
 
   const handleSelectTab = (key) => {
-    if (!VALID_KEYS.has(key)) return; // ignore bad values
+    if (!VALID_KEYS.has(key)) return;
     setTab(key);
-    try {
-      track("tab_select", { tab: key });
-    } catch {}
+    try { track("tab_select", { tab: key }); } catch {}
   };
 
-  // Command menu open state + keyboard toggle
   const [cmdOpen, setCmdOpen] = React.useState(false);
   React.useEffect(() => {
     const onKey = (e) => {
@@ -69,85 +64,75 @@ export default function AppPage() {
 
   return (
     <>
-      <Head>
-        <title>Progress Partner — AmplyAI</title>
-      </Head>
+      <Head><title>Progress Partner — AmplyAI</title></Head>
 
-      {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950/70 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-2">
-          <span className="h-2.5 w-2.5 bg-blue-500 rounded-full" />
-          <span className="font-semibold">AmplyAI</span>
-          <span className="text-gray-400">— Progress Partner</span>
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-950 to-gray-900 text-gray-100">
+        {/* Header */}
+        <div className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950/70 backdrop-blur">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-2">
+            <span className="h-2.5 w-2.5 bg-blue-500 rounded-full" />
+            <span className="font-semibold">AmplyAI</span>
+            <span className="text-gray-400">— Progress Partner</span>
 
-          {/* Tab pills */}
-          <div className="ml-6 hidden md:flex items-center gap-2">
-            {TABS.map((t) => (
+            <div className="ml-6 hidden md:flex items-center gap-2">
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => handleSelectTab(t.key)}
+                  className={`px-3 py-1.5 rounded-full text-sm border transition
+                    ${
+                      tab === t.key
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-transparent text-gray-300 border-gray-700 hover:bg-gray-800/60"
+                    }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="ml-auto flex items-center gap-2">
+              <FeedbackButton tabId={tab} />
               <button
-                key={t.key}
-                onClick={() => handleSelectTab(t.key)}
-                className={`px-3 py-1.5 rounded-full text-sm border transition
-                  ${
-                    tab === t.key
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-transparent text-gray-300 border-gray-700 hover:bg-gray-800/60"
-                  }`}
+                onClick={() => setCmdOpen(true)}
+                className="px-3 py-1.5 rounded-full border border-gray-700 text-xs text-gray-200 hover:bg-gray-800/70"
+                title="Open command menu (⌘/Ctrl+K)"
               >
-                {t.label}
+                ⌘K
               </button>
-            ))}
-          </div>
-
-          {/* Right side actions */}
-          <div className="ml-auto flex items-center gap-2">
-            <FeedbackButton tabId={tab} />
-            <button
-              onClick={() => setCmdOpen(true)}
-              className="px-3 py-1.5 rounded-full border border-gray-700 text-xs text-gray-200 hover:bg-gray-800/70"
-              title="Open command menu (⌘/Ctrl+K)"
-            >
-              ⌘K
-            </button>
+            </div>
           </div>
         </div>
+
+        {/* Body */}
+        <main className="max-w-6xl mx-auto px-4 py-6">
+          {tab === "chat" && (
+            <ChatPanel tabId="chat" systemPrompt={SYSTEM.chat} placeholder="Ask anything…" />
+          )}
+          {tab === "mailmate" && (
+            <ChatPanel
+              tabId="mailmate"
+              systemPrompt={SYSTEM.mailmate}
+              placeholder="Paste context or draft, then say what you need…"
+            />
+          )}
+          {tab === "hirehelper" && (
+            <ChatPanel
+              tabId="hirehelper"
+              systemPrompt={SYSTEM.hirehelper}
+              placeholder="Paste your experience/notes. I’ll turn them into resume bullets…"
+            />
+          )}
+          {tab === "planner" && (
+            <ChatPanel
+              tabId="planner"
+              systemPrompt={SYSTEM.planner}
+              placeholder="What do you need to get done over the next two weeks?"
+            />
+          )}
+        </main>
       </div>
 
-      {/* Body */}
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        {tab === "chat" && (
-          <ChatPanel
-            tabId="chat"
-            systemPrompt={SYSTEM.chat}
-            placeholder="Ask anything…"
-          />
-        )}
-
-        {tab === "mailmate" && (
-          <ChatPanel
-            tabId="mailmate"
-            systemPrompt={SYSTEM.mailmate}
-            placeholder="Paste context or draft, then say what you need…"
-          />
-        )}
-
-        {tab === "hirehelper" && (
-          <ChatPanel
-            tabId="hirehelper"
-            systemPrompt={SYSTEM.hirehelper}
-            placeholder="Paste your experience/notes. I’ll turn them into resume bullets…"
-          />
-        )}
-
-        {tab === "planner" && (
-          <ChatPanel
-            tabId="planner"
-            systemPrompt={SYSTEM.planner}
-            placeholder="What do you need to get done over the next two weeks?"
-          />
-        )}
-      </main>
-
-      {/* Command palette */}
       <CommandMenu
         open={cmdOpen}
         onClose={() => setCmdOpen(false)}
