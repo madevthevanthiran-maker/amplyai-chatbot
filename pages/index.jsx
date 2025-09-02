@@ -7,19 +7,22 @@ export default function Home() {
     {
       key: "hirehelper",
       name: "HireHelper",
-      blurb: "Turn messy experience into recruiter-ready bullets. Quantified. STAR-tight.",
+      blurb:
+        "Turn messy experience into recruiter-ready bullets. Quantified, results-driven.",
       cta: "Open HireHelper",
     },
     {
       key: "mailmate",
       name: "MailMate",
-      blurb: "Write clear, outcome-driven emails with subject lines and variants.",
+      blurb:
+        "Write clear, outcome-driven emails with subject lines and variants.",
       cta: "Open MailMate",
     },
     {
       key: "planner",
       name: "Planner",
-      blurb: "Break goals into doable tasks and schedules with realistic buffers.",
+      blurb:
+        "Break goals into doable tasks and schedules with realistic buffers.",
       cta: "Open Planner",
     },
     {
@@ -78,8 +81,9 @@ export default function Home() {
             Less Stress. <span className="text-gray-400">More Progress.</span>
           </h1>
           <p className="mt-4 text-lg md:text-xl text-gray-300 max-w-2xl mx-auto">
-            A multi-tab AI that helps you <strong>land the job</strong>, <strong>write better emails</strong>,
-            <strong> plan your week</strong>, and <strong>get answers</strong> — all in one clean interface.
+            A multi-tab AI that helps you <strong>land the job</strong>,{" "}
+            <strong>write better emails</strong>, <strong>plan your week</strong>
+            , and <strong>get answers</strong> — all in one clean interface.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link href="/app?tab=hirehelper" legacyBehavior>
@@ -93,7 +97,9 @@ export default function Home() {
               </a>
             </Link>
           </div>
-          <p className="mt-3 text-xs text-gray-400">No sign-up. Conversations stay on your device.</p>
+          <p className="mt-3 text-xs text-gray-400">
+            No sign-up. Conversations stay on your device.
+          </p>
         </section>
 
         {/* Feature grid */}
@@ -118,16 +124,16 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Social proof */}
+        {/* Social proof — Option A (clean quotes, no attribution) */}
         <section className="max-w-6xl mx-auto px-4 py-8">
-          <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-6 shadow-lg">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-6 shadow-lg space-y-2">
             <p className="text-sm text-gray-300">
-              “AmplyAI helped me turn my internship notes into clean resume bullets in minutes.” —{" "}
-              <span className="font-medium text-gray-200">Beta user</span>
+              “AmplyAI helped me turn my internship notes into clean resume
+              bullets in minutes.”
             </p>
-            <p className="mt-2 text-sm text-gray-300">
-              “Planner actually made my week doable. Saved me from over-scheduling.” —{" "}
-              <span className="font-medium text-gray-200">Beta user</span>
+            <p className="text-sm text-gray-300">
+              “Planner actually made my week doable. Saved me from
+              over-scheduling.”
             </p>
           </div>
         </section>
@@ -138,23 +144,29 @@ export default function Home() {
           <div className="mt-4 grid md:grid-cols-2 gap-6">
             <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
               <h3 className="font-medium text-gray-100">Do I need an account?</h3>
-              <p className="text-sm text-gray-300 mt-1">No. The MVP stores conversations locally in your browser.</p>
+              <p className="text-sm text-gray-300 mt-1">
+                No. The MVP stores conversations locally in your browser.
+              </p>
             </div>
             <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
               <h3 className="font-medium text-gray-100">Is my data private?</h3>
               <p className="text-sm text-gray-300 mt-1">
-                We don’t collect personal data. Basic usage is measured via Plausible (privacy-first analytics).
+                We don’t collect personal data. Basic usage is measured via
+                Plausible (privacy-first analytics).
               </p>
             </div>
             <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
               <h3 className="font-medium text-gray-100">What’s coming next?</h3>
               <p className="text-sm text-gray-300 mt-1">
-                Cloud history, account login, and pro templates for resumes, emails, and planning.
+                Cloud history, account login, and pro templates for resumes,
+                emails, and planning.
               </p>
             </div>
             <div className="rounded-2xl border border-gray-800 bg-gray-900/60 p-4">
               <h3 className="font-medium text-gray-100">Is it free?</h3>
-              <p className="text-sm text-gray-300 mt-1">Yes, during soft launch. Paid tiers later.</p>
+              <p className="text-sm text-gray-300 mt-1">
+                Yes, during soft launch. Paid tiers later.
+              </p>
             </div>
           </div>
         </section>
@@ -162,7 +174,9 @@ export default function Home() {
         {/* Footer */}
         <footer className="max-w-6xl mx-auto px-4 pb-16">
           <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
-            <span className="text-sm text-gray-400">© {new Date().getFullYear()} AmplyAI — Progress Partner</span>
+            <span className="text-sm text-gray-400">
+              © {new Date().getFullYear()} AmplyAI — Progress Partner
+            </span>
             <div className="flex gap-3">
               <Link href="/app?tab=chat" legacyBehavior>
                 <a className="text-sm underline text-gray-300">Open App</a>
@@ -170,7 +184,10 @@ export default function Home() {
               <Link href="/privacy" legacyBehavior>
                 <a className="text-sm underline text-gray-400">Privacy</a>
               </Link>
-              <a href="mailto:hello@amplyai.org" className="text-sm underline text-gray-400">
+              <a
+                href="mailto:hello@amplyai.org"
+                className="text-sm underline text-gray-400"
+              >
                 Contact
               </a>
             </div>
