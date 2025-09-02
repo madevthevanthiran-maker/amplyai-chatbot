@@ -1,14 +1,28 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* styles/globals.css */
 
-/* App-wide polish */
-html, body, #__next { height: 100%; }
+/* Tailwind base/components/utilities are already imported elsewhere in your setup */
 
-body {
+html, body, #__next {
+  height: 100%;
+}
+
+html, body {
+  background-color: #0a0a0a;            /* gray-950 */
+  color: #f3f4f6;                       /* gray-100 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Prevent blue/purple default link colors if something slips */
-a { @apply text-inherit no-underline; }
+/* Softer scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #374151 #0b0b0b;     /* thumb / track */
+}
+*::-webkit-scrollbar { height: 10px; width: 10px; }
+*::-webkit-scrollbar-thumb { background: #374151; border-radius: 999px; }
+*::-webkit-scrollbar-track { background: #0b0b0b; }
+
+/* Inputs & buttons base */
+input, button {
+  font-family: inherit;
+}
