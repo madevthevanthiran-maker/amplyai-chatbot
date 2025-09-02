@@ -1,6 +1,7 @@
 // pages/app.js
 import React from "react";
 import ChatPanel from "@/components/ChatPanel";
+import { track } from "@/lib/analytics";
 
 const SYSTEMS = {
   hirehelper: "You are HireHelper, AmplyAI’s resume optimization specialist. Be concise, quantify impact, prefer STAR bullets.",
@@ -12,10 +13,20 @@ const SYSTEMS = {
 export default function AppPage() {
   const [tab, setTab] = React.useState("chat");
 
+  // Optional: read ?tab= from URL (e.g., /app?tab=hirehelper)
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = new URLSearchParams(window.location.search);
+    const t = p.get("tab");
+    if (t && SYSTEMS[t]) setTab(t);
+  }, []);
+
   const label = (k) =>
     k === "hirehelper" ? "HireHelper" :
     k === "mailmate" ? "MailMate" :
     k === "planner" ? "Planner" : "Chat";
+
+  const tabs = ["hirehelper", "mailmate", "planner", "chat"];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-100">
@@ -23,10 +34,18 @@ export default function AppPage() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="font-semibold">AmplyAI</div>
           <nav className="flex gap-2">
-            {["hirehelper","mailmate","planner","chat"].map((key) => (
+            {tabs.map((key) => (
               <button
                 key={key}
-                onClick={() => setTab(key)}
+                onClick={() => {
+                  setTab(key);
+                  track("tab_select", { tab: key });
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("tab", key);
+                    window.history.replaceState({}, "", url.toString());
+                  }
+                }}
                 className={`px-3 py-1.5 rounded-xl text-sm capitalize border
                   ${tab === key ? "bg-gray-900 text-white" : "bg-white hover:bg-gray-50"}`}
               >
