@@ -6,10 +6,13 @@ export default function App({ Component, pageProps }) {
   return (
     <>
       <Head>
-        <title>Progress Partner</title>
+        {/* Replace data-domain with your production domain if you change it later */}
+        <script
+          defer
+          data-domain="amplyai-chatbot.vercel.app"
+          src="https://plausible.io/js/script.js"
+        />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* Plausible analytics */}
-        <script defer data-domain="amplyai.org" src="https://plausible.io/js/script.js" />
       </Head>
       <Component {...pageProps} />
     </>
