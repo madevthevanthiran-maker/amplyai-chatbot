@@ -55,17 +55,15 @@ export default function Home() {
               <span className="text-gray-400">— Progress Partner</span>
             </div>
             <nav className="flex gap-2">
-              <Link
-                href="/app?tab=chat"
-                className="px-4 py-1.5 rounded-full text-sm font-medium bg-gray-800/60 text-gray-200 hover:bg-gray-700/60"
-              >
-                Open App
+              <Link href="/app?tab=chat" legacyBehavior>
+                <a className="px-4 py-1.5 rounded-full text-sm font-medium bg-gray-800/60 text-gray-200 hover:bg-gray-700/60">
+                  Open App
+                </a>
               </Link>
-              <Link
-                href="/privacy"
-                className="px-4 py-1.5 rounded-full text-sm font-medium bg-gray-800/60 text-gray-300 hover:bg-gray-700/60"
-              >
-                Privacy
+              <Link href="/privacy" legacyBehavior>
+                <a className="px-4 py-1.5 rounded-full text-sm font-medium bg-gray-800/60 text-gray-300 hover:bg-gray-700/60">
+                  Privacy
+                </a>
               </Link>
             </nav>
           </div>
@@ -84,17 +82,15 @@ export default function Home() {
             <strong> plan your week</strong>, and <strong>get answers</strong> — all in one clean interface.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/app?tab=hirehelper"
-              className="px-5 py-3 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500"
-            >
-              Try HireHelper
+            <Link href="/app?tab=hirehelper" legacyBehavior>
+              <a className="px-5 py-3 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500">
+                Try HireHelper
+              </a>
             </Link>
-            <Link
-              href="/app?tab=chat"
-              className="px-5 py-3 rounded-full border border-gray-700 bg-gray-900/70 text-sm text-gray-200 hover:bg-gray-800/70"
-            >
-              Open Progress Partner
+            <Link href="/app?tab=chat" legacyBehavior>
+              <a className="px-5 py-3 rounded-full border border-gray-700 bg-gray-900/70 text-sm text-gray-200 hover:bg-gray-800/70">
+                Open Progress Partner
+              </a>
             </Link>
           </div>
           <p className="mt-3 text-xs text-gray-400">No sign-up. Conversations stay on your device.</p>
@@ -112,11 +108,10 @@ export default function Home() {
                   <h3 className="font-semibold text-gray-100">{f.name}</h3>
                   <p className="mt-2 text-sm text-gray-300">{f.blurb}</p>
                 </div>
-                <Link
-                  href={`/app?tab=${f.key}`}
-                  className="mt-4 inline-flex items-center justify-center rounded-full border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70"
-                >
-                  {f.cta}
+                <Link href={`/app?tab=${f.key}`} legacyBehavior>
+                  <a className="mt-4 inline-flex items-center justify-center rounded-full border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70">
+                    {f.cta}
+                  </a>
                 </Link>
               </div>
             ))}
@@ -169,15 +164,15 @@ export default function Home() {
           <div className="rounded-2xl border border-gray-800 bg-gray-900/60 backdrop-blur p-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
             <span className="text-sm text-gray-400">© {new Date().getFullYear()} AmplyAI — Progress Partner</span>
             <div className="flex gap-3">
-              <Link href="/app?tab=chat" className="text-sm underline text-gray-300">
-                Open App
+              <Link href="/app?tab=chat" legacyBehavior>
+                <a className="text-sm underline text-gray-300">Open App</a>
               </Link>
-              <Link href="/privacy" className="text-sm underline text-gray-400">
-                Privacy
+              <Link href="/privacy" legacyBehavior>
+                <a className="text-sm underline text-gray-400">Privacy</a>
               </Link>
-              <Link href="mailto:hello@amplyai.org" className="text-sm underline text-gray-400">
+              <a href="mailto:hello@amplyai.org" className="text-sm underline text-gray-400">
                 Contact
-              </Link>
+              </a>
             </div>
           </div>
         </footer>
