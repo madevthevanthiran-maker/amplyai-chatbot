@@ -1,9 +1,25 @@
 // pages/index.jsx
+import Head from "next/head";
 import Link from "next/link";
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
+      <Head>
+        <title>AmplyAI — Progress Partner</title>
+        <meta
+          name="description"
+          content="A multi-tab AI that helps you land the job, write better emails, plan your week, and get answers — all in one clean interface."
+        />
+        <meta property="og:title" content="AmplyAI — Progress Partner" />
+        <meta
+          property="og:description"
+          content="Resume bullets, better emails, realistic plans, and a helpful chat — in one place."
+        />
+        <meta property="og:image" content="/og.png" />
+        <meta name="twitter:card" content="summary_large_image" />
+      </Head>
+
       {/* Hero */}
       <section className="max-w-4xl mx-auto px-6 py-20 text-center">
         <h1 className="text-4xl sm:text-5xl font-bold mb-4">
@@ -62,11 +78,12 @@ export default function Home() {
           <blockquote className="bg-gray-800 p-6 rounded-xl text-gray-300 italic">
             “I dumped my messy internship notes into AmplyAI and it turned them into
             clean, recruiter-ready bullets in minutes. Way easier than staring at a
-            blank page.” <span className="block mt-2 text-gray-400">— Beta user</span>
+            blank page.”
+            <span className="block mt-2 text-gray-400">— Beta user</span>
           </blockquote>
           <blockquote className="bg-gray-800 p-6 rounded-xl text-gray-300 italic">
             “The Planner actually made my week doable. It helped me avoid
-            over-scheduling and added real buffers around things. Total lifesaver.”{" "}
+            over-scheduling and added real buffers around things. Total lifesaver.”
             <span className="block mt-2 text-gray-400">— Beta user</span>
           </blockquote>
         </div>
@@ -74,7 +91,20 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="text-center py-6 text-sm text-gray-500">
-        © {new Date().getFullYear()} AmplyAI · Privacy-friendly · No sign-up required
+        <div className="space-x-4">
+          <Link href="/privacy" className="underline hover:text-gray-300">Privacy</Link>
+          <a
+            className="underline hover:text-gray-300"
+            href="https://forms.gle/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Share feedback
+          </a>
+        </div>
+        <div className="mt-2">
+          © {new Date().getFullYear()} AmplyAI · Privacy-friendly · No sign-up required
+        </div>
       </footer>
     </div>
   );
