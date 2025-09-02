@@ -17,34 +17,38 @@ export default function ChatPanel({
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState(null);
+  const [error, setError] = React.useState(null); // shows network errors
+  const [stopped, setStopped] = React.useState(false); // user-initiated stop
   const [lastUserMsg, setLastUserMsg] = React.useState(null);
   const [copiedId, setCopiedId] = React.useState(null);
 
   const inputRef = React.useRef(null);
-  const scrollRef = React.useRef(null);      // scroll container
-  const firstLoadRef = React.useRef(true);   // smoother first render
+  const scrollRef = React.useRef(null);
+  const firstLoadRef = React.useRef(true);
+  const abortRef = React.useRef(null); // <-- holds AbortController for current request
 
   // Load & persist per-tab conversation
   React.useEffect(() => {
     setMessages(loadMessages(tabId));
-    // ensure we start at bottom on tab switch
     queueMicrotask(() => scrollToBottom(false));
+    // reset any stale UI flags when switching tabs
+    setError(null);
+    setStopped(false);
+    setLastUserMsg(null);
   }, [tabId]);
 
   React.useEffect(() => {
     saveMessages(tabId, messages);
   }, [tabId, messages]);
 
-  // Auto-scroll when messages change or when model is "typing"
+  // Auto-scroll on new content
   React.useEffect(() => {
-    // defer until DOM paints
     const id = requestAnimationFrame(() => scrollToBottom(!firstLoadRef.current));
     firstLoadRef.current = false;
     return () => cancelAnimationFrame(id);
   }, [messages, loading]);
 
-  // Keyboard shortcuts
+  // Shortcuts
   React.useEffect(() => {
     const onKey = (e) => {
       const meta = e.ctrlKey || e.metaKey;
@@ -67,8 +71,21 @@ export default function ChatPanel({
         if (confirm("Clear this chat?")) reset();
         return;
       }
-      // Blur with Esc
-      if (e.key === "Escape") inputRef.current?.blur();
+      // Stop with Cmd/Ctrl + .
+      if (meta && e.key === ".") {
+        e.preventDefault();
+        if (loading) stop();
+        return;
+      }
+      // Esc: stop if loading, otherwise blur
+      if (e.key === "Escape") {
+        if (loading) {
+          e.preventDefault();
+          stop();
+        } else {
+          inputRef.current?.blur();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -83,11 +100,24 @@ export default function ChatPanel({
     });
   };
 
+  const stop = () => {
+    try {
+      abortRef.current?.abort();
+    } catch {}
+    abortRef.current = null;
+    setLoading(false);
+    setError(null);
+    setStopped(true); // show a gentle “Generation stopped”
+    try { track("stop_generation", { tab: tabId }); } catch {}
+  };
+
   const send = async (text) => {
     const content = (text ?? input).trim();
     if (!content || loading) return;
 
     setError(null);
+    setStopped(false);
+
     setLoading(true);
 
     const userMsg = { id: newId(), role: "user", content, ts: Date.now() };
@@ -96,12 +126,7 @@ export default function ChatPanel({
     const bootstrap =
       messages.length === 0 && systemPrompt
         ? [
-            {
-              id: newId(),
-              role: "system",
-              content: systemPrompt,
-              ts: Date.now(),
-            },
+            { id: newId(), role: "system", content: systemPrompt, ts: Date.now() },
             userMsg,
           ]
         : withUser;
@@ -109,19 +134,30 @@ export default function ChatPanel({
     setMessages(withUser);
     setLastUserMsg(userMsg);
     setInput("");
-    try {
-      track("message_send", { tab: tabId });
-    } catch {}
+    try { track("message_send", { tab: tabId }); } catch {}
+
+    // Create controller and attach to fetch
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       const resp = await fetch(apiPath, {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           system: systemPrompt,
           messages: bootstrap.map(({ role, content }) => ({ role, content })),
         }),
       });
+
+      // If it was aborted, treat as stop (no error banner)
+      if (controller.signal.aborted) {
+        setLoading(false);
+        setStopped(true);
+        abortRef.current = null;
+        return;
+      }
 
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
@@ -142,13 +178,20 @@ export default function ChatPanel({
         ts: Date.now(),
       };
       setMessages((curr) => [...curr, assistantMsg]);
+      setStopped(false);
+      setError(null);
     } catch (e) {
-      setError((e && e.message) || "Something went wrong. Please try again.");
-      try {
-        track("error", { tab: tabId, message: String(e?.message || e) });
-      } catch {}
+      // AbortError -> treat as stop (no error)
+      if (e?.name === "AbortError") {
+        setStopped(true);
+        setError(null);
+      } else {
+        setError((e && e.message) || "Something went wrong. Please try again.");
+        try { track("error", { tab: tabId, message: String(e?.message || e) }); } catch {}
+      }
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   };
 
@@ -158,6 +201,7 @@ export default function ChatPanel({
     clearMessages(tabId);
     setMessages([]);
     setError(null);
+    setStopped(false);
     setLastUserMsg(null);
     firstLoadRef.current = true;
     queueMicrotask(() => scrollToBottom(false));
@@ -181,9 +225,7 @@ export default function ChatPanel({
   };
 
   const handleFeedback = (id, isUp) => {
-    try {
-      track("feedback_vote", { tab: tabId, vote: isUp ? "up" : "down" });
-    } catch {}
+    try { track("feedback_vote", { tab: tabId, vote: isUp ? "up" : "down" }); } catch {}
   };
 
   return (
@@ -209,34 +251,21 @@ export default function ChatPanel({
                 .map((m) => (
                   <div
                     key={m.id}
-                    className={`mb-3 flex ${
-                      m.role === "user" ? "justify-end" : "justify-start"
-                    }`}
+                    className={`mb-3 flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     <div
                       className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed shadow
-                      ${
-                        m.role === "user"
-                          ? "bg-blue-600/90 text-white"
-                          : "bg-gray-800 text-gray-100"
-                      }`}
+                      ${m.role === "user" ? "bg-blue-600/90 text-white" : "bg-gray-800 text-gray-100"}`}
                     >
                       {m.content}
                       {m.role === "assistant" && (
                         <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                          <button
-                            onClick={() => copyText(m.id, m.content)}
-                            className="hover:text-gray-200"
-                          >
+                          <button onClick={() => copyText(m.id, m.content)} className="hover:text-gray-200">
                             {copiedId === m.id ? "Copied!" : "Copy"}
                           </button>
                           <span>·</span>
-                          <button onClick={() => handleFeedback(m.id, true)}>
-                            👍
-                          </button>
-                          <button onClick={() => handleFeedback(m.id, false)}>
-                            👎
-                          </button>
+                          <button onClick={() => handleFeedback(m.id, true)}>👍</button>
+                          <button onClick={() => handleFeedback(m.id, false)}>👎</button>
                         </div>
                       )}
                     </div>
@@ -255,7 +284,7 @@ export default function ChatPanel({
                 </div>
               )}
 
-              {/* Error banner (sticky-ish at end of flow) */}
+              {/* Error or Stopped banners */}
               {error && (
                 <div className="mb-3">
                   <div className="inline-block rounded-xl bg-red-900/30 text-red-300 text-sm px-3 py-2">
@@ -265,6 +294,13 @@ export default function ChatPanel({
                         Retry
                       </button>
                     )}
+                  </div>
+                </div>
+              )}
+              {!error && stopped && (
+                <div className="mb-3">
+                  <div className="inline-block rounded-xl bg-yellow-900/30 text-yellow-300 text-sm px-3 py-2">
+                    ◼︎ Generation stopped
                   </div>
                 </div>
               )}
@@ -297,16 +333,28 @@ export default function ChatPanel({
             onClick={reset}
             className="px-4 py-2 rounded-full border border-gray-800 text-sm text-gray-200 hover:bg-gray-800/70"
             title="Start a new chat"
+            disabled={loading}
           >
             New chat
           </button>
 
-          <button
-            disabled={loading || !input.trim()}
-            className="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 disabled:opacity-50"
-          >
-            {loading ? "…" : "Send"}
-          </button>
+          {!loading ? (
+            <button
+              disabled={!input.trim()}
+              className="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 disabled:opacity-50"
+            >
+              Send
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={stop}
+              className="px-5 py-2 rounded-full bg-gray-700 text-gray-100 text-sm font-medium hover:bg-gray-600"
+              title="Stop (⌘/Ctrl + .)"
+            >
+              Stop
+            </button>
+          )}
         </div>
       </form>
 
@@ -315,7 +363,8 @@ export default function ChatPanel({
         Shortcuts: <span className="font-medium text-gray-300">/</span> focus ·{" "}
         <span className="font-medium text-gray-300">⌘/Ctrl + Enter</span> send ·{" "}
         <span className="font-medium text-gray-300">⌘/Ctrl + L</span> clear ·{" "}
-        <span className="font-medium text-gray-300">Esc</span> blur
+        <span className="font-medium text-gray-300">⌘/Ctrl + .</span> stop ·{" "}
+        <span className="font-medium text-gray-300">Esc</span> blur/stop
       </div>
     </div>
   );
