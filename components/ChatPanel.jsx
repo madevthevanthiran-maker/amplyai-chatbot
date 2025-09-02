@@ -15,7 +15,6 @@ export default function ChatPanel({
   const [error, setError] = React.useState(null);
   const [lastUserMsg, setLastUserMsg] = React.useState(null);
   const [copiedId, setCopiedId] = React.useState(null);
-
   const inputRef = React.useRef(null);
 
   // Load & persist per-tab conversation
@@ -33,27 +32,21 @@ export default function ChatPanel({
         inputRef.current?.focus();
         return;
       }
-
       // Send with Cmd/Ctrl + Enter
       if (meta && e.key === "Enter") {
         e.preventDefault();
         if (!loading) send();
         return;
       }
-
       // Clear chat with Cmd/Ctrl + L
       if (meta && e.key.toLowerCase() === "l") {
         e.preventDefault();
         if (confirm("Clear this chat?")) reset();
         return;
       }
-
       // Blur with Esc
-      if (e.key === "Escape") {
-        inputRef.current?.blur();
-      }
+      if (e.key === "Escape") inputRef.current?.blur();
     };
-
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [loading]);
@@ -144,65 +137,65 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Conversation */}
-      <div className="rounded-xl border border-gray-800 bg-gray-950/50 p-4 max-h-[60vh] overflow-y-auto">
-        {messages.filter(m => m.role !== "system").length === 0 ? (
-          <div className="text-sm text-gray-400">
-            Hey! I’m your Progress Partner. What do you want to do today?
-            <ul className="list-disc ml-5 mt-2 space-y-1">
-              <li>Write a great email (MailMate)</li>
-              <li>Build/refresh your resume (HireHelper)</li>
-              <li>Plan study/work for two weeks (Planner)</li>
-              <li>Or just ask anything in Chat (general)</li>
-            </ul>
-          </div>
-        ) : (
-          messages
-            .filter((m) => m.role !== "system")
-            .map((m) => (
-              <div key={m.id} className={`mb-3 flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`rounded-2xl px-4 py-2 text-sm max-w-[80%] leading-relaxed shadow-sm
-                    ${m.role === "user" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-100"}`}
-                >
-                  {m.content}
-                  {m.role === "assistant" && (
-                    <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                      <button onClick={() => copyText(m.id, m.content)} className="hover:text-gray-200">
-                        {copiedId === m.id ? "Copied!" : "Copy"}
-                      </button>
-                      <span>·</span>
-                      <button onClick={() => handleFeedback(m.id, true)}>👍</button>
-                      <button onClick={() => handleFeedback(m.id, false)}>👎</button>
-                    </div>
-                  )}
+    <div className="flex flex-col gap-3">
+      {/* Dark chat container */}
+      <div className="h-[calc(100vh-210px)] rounded-2xl border border-gray-800 bg-gray-950 text-gray-100 shadow-lg overflow-hidden">
+        {/* Messages area */}
+        <div className="h-full w-full overflow-y-auto p-4">
+          {messages.filter(m => m.role !== "system").length === 0 ? (
+            <div className="text-sm text-gray-400">
+              Hey! I’m your Progress Partner. What do you want to do today?
+              <ul className="list-disc ml-5 mt-2 space-y-1">
+                <li>Write a great email (MailMate)</li>
+                <li>Build/refresh your resume (HireHelper)</li>
+                <li>Plan study/work for two weeks (Planner)</li>
+                <li>Or just ask anything in Chat (general)</li>
+              </ul>
+            </div>
+          ) : (
+            messages
+              .filter((m) => m.role !== "system")
+              .map((m) => (
+                <div key={m.id} className={`mb-3 flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed shadow
+                      ${m.role === "user" ? "bg-blue-600/90 text-white" : "bg-gray-800 text-gray-100"}`}
+                  >
+                    {m.content}
+                    {m.role === "assistant" && (
+                      <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                        <button onClick={() => copyText(m.id, m.content)} className="hover:text-gray-200">
+                          {copiedId === m.id ? "Copied!" : "Copy"}
+                        </button>
+                        <span>·</span>
+                        <button onClick={() => handleFeedback(m.id, true)}>👍</button>
+                        <button onClick={() => handleFeedback(m.id, false)}>👎</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
-        )}
+              ))
+          )}
 
-        {loading && <div className="text-sm text-gray-400 italic">…thinking</div>}
+          {loading && <div className="text-sm text-gray-400 italic">…thinking</div>}
 
-        {error && (
-          <div className="mt-2 inline-block rounded-xl bg-red-900/30 text-red-300 text-sm px-3 py-2">
-            ⚠️ {error}{" "}
-            {lastUserMsg && (
-              <button onClick={retry} className="underline">
-                Retry
-              </button>
-            )}
-          </div>
-        )}
+          {error && (
+            <div className="mt-2 inline-block rounded-xl bg-red-900/30 text-red-300 text-sm px-3 py-2">
+              ⚠️ {error}{" "}
+              {lastUserMsg && (
+                <button onClick={retry} className="underline">
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Input + actions */}
+      {/* Input row (dark) */}
       <form
         className="flex items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
+        onSubmit={(e) => { e.preventDefault(); send(); }}
       >
         <input
           ref={inputRef}
@@ -210,7 +203,7 @@ export default function ChatPanel({
           onChange={(e) => setInput(e.target.value)}
           placeholder={placeholder}
           disabled={loading}
-          className="flex-1 rounded-full border border-gray-700 bg-gray-900 px-4 py-2 text-sm text-gray-100
+          className="flex-1 rounded-full border border-gray-800 bg-gray-900 px-4 py-2 text-sm text-gray-100
             placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50"
         />
 
@@ -218,7 +211,7 @@ export default function ChatPanel({
           <button
             type="button"
             onClick={reset}
-            className="px-4 py-2 rounded-full border border-gray-700 text-sm text-gray-200 hover:bg-gray-800/70"
+            className="px-4 py-2 rounded-full border border-gray-800 text-sm text-gray-200 hover:bg-gray-800/70"
             title="Start a new chat"
           >
             New chat
