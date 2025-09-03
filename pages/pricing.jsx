@@ -13,10 +13,7 @@ export default function Pricing() {
           content="Affordable, privacy-friendly AI Progress Partner. Beta pricing preview."
         />
         <meta property="og:title" content="AmplyAI — Pricing (Beta Preview)" />
-        <meta
-          property="og:description"
-          content="Affordable, privacy-friendly AI Progress Partner."
-        />
+        <meta property="og:description" content="Affordable, privacy-friendly AI Progress Partner." />
         <meta property="og:image" content="/og.png" />
       </Head>
 
@@ -142,9 +139,7 @@ function Plan({ name, price, tagline, features, highlight, comingSoon }) {
   return (
     <div
       className={`rounded-2xl border p-6 shadow transition ${
-        highlight
-          ? "border-blue-700 bg-blue-950/30"
-          : "border-gray-800 bg-gray-900"
+        highlight ? "border-blue-700 bg-blue-950/30" : "border-gray-800 bg-gray-900"
       }`}
     >
       <div className="flex items-baseline justify-between">
@@ -164,9 +159,7 @@ function Plan({ name, price, tagline, features, highlight, comingSoon }) {
         {comingSoon ? "Coming soon" : "Available"}
       </div>
       {highlight && (
-        <div className="mt-3 text-xs text-blue-200">
-          Likely the best fit for most users.
-        </div>
+        <div className="mt-3 text-xs text-blue-200">Likely the best fit for most users.</div>
       )}
     </div>
   );
