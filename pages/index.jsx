@@ -1,8 +1,12 @@
 // pages/index.jsx
 import Head from "next/head";
 import Link from "next/link";
+import React from "react";
+import FeedbackModal from "@/components/FeedbackModal";
 
 export default function Home() {
+  const [open, setOpen] = React.useState(false);
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <Head>
@@ -90,22 +94,29 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="text-center py-6 text-sm text-gray-500">
+      <footer className="text-center py-8 text-sm text-gray-500">
         <div className="space-x-4">
           <Link href="/privacy" className="underline hover:text-gray-300">Privacy</Link>
-          <a
+          <Link href="/pricing" className="underline hover:text-gray-300">Pricing</Link>
+          <button
+            onClick={() => setOpen(true)}
             className="underline hover:text-gray-300"
-            href="https://forms.gle/"
-            target="_blank"
-            rel="noreferrer"
+            title="Share feedback"
           >
             Share feedback
-          </a>
+          </button>
         </div>
         <div className="mt-2">
-          © {new Date().getFullYear()} AmplyAI · Privacy-friendly · No sign-up required
+          © {new Date().getFullYear()} AmplyAI · Privacy-friendly · No sign-up required · Chats stay in your browser
         </div>
       </footer>
+
+      {/* Feedback modal */}
+      <FeedbackModal
+        open={open}
+        onClose={() => setOpen(false)}
+        defaultBody={`AmplyAI feedback\n\nI’m on the landing page.\n\nYour thoughts:`}
+      />
     </div>
   );
 }
