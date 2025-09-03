@@ -6,12 +6,13 @@ import {
   clearMessages,
   newId,
 } from "@/lib/persistedChat";
+import { messagesToMarkdown, downloadStringAsFile } from "@/lib/exports";
 import { track } from "@/lib/analytics";
 
 export default function ChatPanel({
   tabId,
   systemPrompt,
-  apiPath = "/api/chat", // streaming endpoint above
+  apiPath = "/api/chat",
   placeholder = "Ask anything…",
 }) {
   const [messages, setMessages] = React.useState([]);
@@ -21,20 +22,25 @@ export default function ChatPanel({
   const [stopped, setStopped] = React.useState(false);
   const [lastUserMsg, setLastUserMsg] = React.useState(null);
   const [copiedId, setCopiedId] = React.useState(null);
+  const [justCopiedTranscript, setJustCopiedTranscript] = React.useState(false);
 
   const inputRef = React.useRef(null);
   const scrollRef = React.useRef(null);
   const firstLoadRef = React.useRef(true);
-  const abortRef = React.useRef(null); // AbortController for current request
+  const abortRef = React.useRef(null);
 
   // Load & persist
   React.useEffect(() => {
     setMessages(loadMessages(tabId));
     queueMicrotask(() => scrollToBottom(false));
-    setError(null); setStopped(false); setLastUserMsg(null);
+    setError(null);
+    setStopped(false);
+    setLastUserMsg(null);
   }, [tabId]);
 
-  React.useEffect(() => { saveMessages(tabId, messages); }, [tabId, messages]);
+  React.useEffect(() => {
+    saveMessages(tabId, messages);
+  }, [tabId, messages]);
 
   // Auto-scroll
   React.useEffect(() => {
@@ -47,57 +53,92 @@ export default function ChatPanel({
   React.useEffect(() => {
     const onKey = (e) => {
       const meta = e.ctrlKey || e.metaKey;
+
+      // Focus with '/'
       if (e.key === "/" && !e.target.closest("input,textarea")) {
-        e.preventDefault(); inputRef.current?.focus(); return;
+        e.preventDefault();
+        inputRef.current?.focus();
+        return;
       }
+      // Send with Cmd/Ctrl + Enter
       if (meta && e.key === "Enter") {
-        e.preventDefault(); if (!loading) send(); return;
+        e.preventDefault();
+        if (!loading) send();
+        return;
       }
+      // Clear chat with Cmd/Ctrl + L
       if (meta && e.key.toLowerCase() === "l") {
-        e.preventDefault(); if (confirm("Clear this chat?")) reset(); return;
+        e.preventDefault();
+        if (confirm("Clear this chat?")) reset();
+        return;
       }
+      // Stop with Cmd/Ctrl + .
       if (meta && e.key === ".") {
-        e.preventDefault(); if (loading) stop(); return;
+        e.preventDefault();
+        if (loading) stop();
+        return;
       }
+      // Copy transcript: Cmd/Ctrl + Shift + C
+      if (meta && e.shiftKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copyTranscript();
+        return;
+      }
+      // Esc: stop if loading, else blur
       if (e.key === "Escape") {
-        if (loading) { e.preventDefault(); stop(); } else inputRef.current?.blur();
+        if (loading) {
+          e.preventDefault();
+          stop();
+        } else {
+          inputRef.current?.blur();
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [loading]);
+  }, [loading, messages]);
 
   const scrollToBottom = (smooth = true) => {
-    const el = scrollRef.current; if (!el) return;
+    const el = scrollRef.current;
+    if (!el) return;
     el.scrollTo({ top: el.scrollHeight + 9999, behavior: smooth ? "smooth" : "auto" });
   };
 
   const stop = () => {
-    try { abortRef.current?.abort(); } catch {}
+    try {
+      abortRef.current?.abort();
+    } catch {}
     abortRef.current = null;
-    setLoading(false); setError(null); setStopped(true);
-    try { track("stop_generation", { tab: tabId }); } catch {}
+    setLoading(false);
+    setError(null);
+    setStopped(true);
+    try {
+      track("stop_generation", { tab: tabId });
+    } catch {}
   };
 
   const send = async (text) => {
     const content = (text ?? input).trim();
     if (!content || loading) return;
 
-    setError(null); setStopped(false); setLoading(true);
+    setError(null);
+    setStopped(false);
+    setLoading(true);
 
     const userMsg = { id: newId(), role: "user", content, ts: Date.now() };
     const base = [...messages, userMsg];
 
-    // Create placeholder assistant message to stream into
+    // Placeholder assistant message to stream into
     const assistantId = newId();
     const assistantMsg = { id: assistantId, role: "assistant", content: "", ts: Date.now() };
 
     setMessages([...base, assistantMsg]);
     setLastUserMsg(userMsg);
     setInput("");
-    try { track("message_send", { tab: tabId }); } catch {}
+    try {
+      track("message_send", { tab: tabId });
+    } catch {}
 
-    // Abort controller for this request
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -108,7 +149,8 @@ export default function ChatPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           system: systemPrompt,
-          messages: [{ role: "user", content }], // server will prepend system & prior if you prefer; we send minimal bootstrap
+          // minimal bootstrap; server prepends system if provided
+          messages: [{ role: "user", content }],
         }),
       });
 
@@ -121,7 +163,7 @@ export default function ChatPanel({
         throw new Error(msg);
       }
 
-      // Stream parse SSE: lines starting with "data: "
+      // Parse SSE stream
       const reader = resp.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
@@ -138,14 +180,13 @@ export default function ChatPanel({
           if (!line) continue;
           if (!line.startsWith("data:")) continue;
 
-          const data = line.slice(5).trim(); // after "data:"
-          if (data === "[DONE]") { break; }
+          const data = line.slice(5).trim();
+          if (data === "[DONE]") break;
 
           try {
             const json = JSON.parse(data);
             const delta = json?.choices?.[0]?.delta?.content || "";
             if (delta) {
-              // append token to assistant message
               setMessages((curr) =>
                 curr.map((m) =>
                   m.id === assistantId ? { ...m, content: (m.content || "") + delta } : m
@@ -153,17 +194,22 @@ export default function ChatPanel({
               );
             }
           } catch {
-            // ignore malformed chunks
+            // ignore bad chunks
           }
         }
       }
 
-      setStopped(false); setError(null);
+      setStopped(false);
+      setError(null);
     } catch (e) {
       if (e?.name === "AbortError") {
-        setStopped(true); setError(null);
+        setStopped(true);
+        setError(null);
       } else {
         setError(e?.message || "Something went wrong.");
+        try {
+          track("error", { tab: tabId, message: String(e?.message || e) });
+        } catch {}
       }
     } finally {
       setLoading(false);
@@ -176,7 +222,8 @@ export default function ChatPanel({
   const reset = () => {
     clearMessages(tabId);
     setMessages([]);
-    setError(null); setStopped(false);
+    setError(null);
+    setStopped(false);
     setLastUserMsg(null);
     firstLoadRef.current = true;
     queueMicrotask(() => scrollToBottom(false));
@@ -184,18 +231,57 @@ export default function ChatPanel({
 
   const copyText = async (id, text) => {
     try {
-      if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(text);
-      else {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
         const ta = document.createElement("textarea");
-        ta.value = text; document.body.appendChild(ta);
-        ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
       }
-      setCopiedId(id); setTimeout(() => setCopiedId(null), 1200);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1200);
+    } catch {}
+  };
+
+  const copyTranscript = async () => {
+    const md = messagesToMarkdown({ messages, tabId });
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(md);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = md;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setJustCopiedTranscript(true);
+      setTimeout(() => setJustCopiedTranscript(false), 1500);
+      try {
+        track("copy_transcript", { tab: tabId });
+      } catch {}
+    } catch {}
+  };
+
+  const downloadTranscript = () => {
+    const md = messagesToMarkdown({ messages, tabId });
+    const fname = `amplyai_${tabId}_transcript_${new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")}.md`;
+    downloadStringAsFile(md, fname, "text/markdown");
+    try {
+      track("download_transcript", { tab: tabId });
     } catch {}
   };
 
   const handleFeedback = (id, isUp) => {
-    try { track("feedback_vote", { tab: tabId, vote: isUp ? "up" : "down" }); } catch {}
+    try {
+      track("feedback_vote", { tab: tabId, vote: isUp ? "up" : "down" });
+    } catch {}
   };
 
   return (
@@ -204,7 +290,7 @@ export default function ChatPanel({
       <div className="h-[calc(100vh-210px)] rounded-2xl border border-gray-800 bg-gray-950 text-gray-100 shadow-lg overflow-hidden">
         {/* Messages */}
         <div ref={scrollRef} className="h-full w-full overflow-y-auto p-4">
-          {messages.filter(m => m.role !== "system").length === 0 ? (
+          {messages.filter((m) => m.role !== "system").length === 0 ? (
             <div className="text-sm text-gray-400">
               Hey! I’m your Progress Partner. What do you want to do today?
               <ul className="list-disc ml-5 mt-2 space-y-1">
@@ -216,26 +302,34 @@ export default function ChatPanel({
             </div>
           ) : (
             <>
-              {messages.filter(m => m.role !== "system").map((m) => (
-                <div key={m.id} className={`mb-3 flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              {messages
+                .filter((m) => m.role !== "system")
+                .map((m) => (
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed shadow
-                      ${m.role === "user" ? "bg-blue-600/90 text-white" : "bg-gray-800 text-gray-100"}`}
+                    key={m.id}
+                    className={`mb-3 flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    {m.content}
-                    {m.role === "assistant" && (
-                      <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                        <button onClick={() => copyText(m.id, m.content)} className="hover:text-gray-200">
-                          {copiedId === m.id ? "Copied!" : "Copy"}
-                        </button>
-                        <span>·</span>
-                        <button onClick={() => handleFeedback(m.id, true)}>👍</button>
-                        <button onClick={() => handleFeedback(m.id, false)}>👎</button>
-                      </div>
-                    )}
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed shadow
+                      ${m.role === "user" ? "bg-blue-600/90 text-white" : "bg-gray-800 text-gray-100"}`}
+                    >
+                      {m.content}
+                      {m.role === "assistant" && (
+                        <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                          <button
+                            onClick={() => copyText(m.id, m.content)}
+                            className="hover:text-gray-200"
+                          >
+                            {copiedId === m.id ? "Copied!" : "Copy"}
+                          </button>
+                          <span>·</span>
+                          <button onClick={() => handleFeedback(m.id, true)}>👍</button>
+                          <button onClick={() => handleFeedback(m.id, false)}>👎</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
 
               {/* Error / Stopped badges */}
               {error && (
@@ -243,7 +337,9 @@ export default function ChatPanel({
                   <div className="inline-block rounded-xl bg-red-900/30 text-red-300 text-sm px-3 py-2">
                     ⚠️ {error}{" "}
                     {lastUserMsg && (
-                      <button onClick={retry} className="underline">Retry</button>
+                      <button onClick={retry} className="underline">
+                        Retry
+                      </button>
                     )}
                   </div>
                 </div>
@@ -262,8 +358,11 @@ export default function ChatPanel({
 
       {/* Input row */}
       <form
-        className="flex items-center gap-2"
-        onSubmit={(e) => { e.preventDefault(); send(); }}
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
       >
         <input
           ref={inputRef}
@@ -271,7 +370,7 @@ export default function ChatPanel({
           onChange={(e) => setInput(e.target.value)}
           placeholder={placeholder}
           disabled={loading}
-          className="flex-1 rounded-full border border-gray-800 bg-gray-900 px-4 py-2 text-sm text-gray-100
+          className="flex-1 min-w-[200px] rounded-full border border-gray-800 bg-gray-900 px-4 py-2 text-sm text-gray-100
             placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50"
         />
 
@@ -304,6 +403,26 @@ export default function ChatPanel({
             </button>
           )}
         </div>
+
+        {/* Export controls */}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={copyTranscript}
+            className="px-3 py-2 rounded-full border border-gray-800 text-xs text-gray-200 hover:bg-gray-800/70"
+            title="Copy conversation as Markdown (⌘/Ctrl + Shift + C)"
+          >
+            {justCopiedTranscript ? "Copied chat ✓" : "Copy chat"}
+          </button>
+          <button
+            type="button"
+            onClick={downloadTranscript}
+            className="px-3 py-2 rounded-full border border-gray-800 text-xs text-gray-200 hover:bg-gray-800/70"
+            title="Download conversation as .md"
+          >
+            Download .md
+          </button>
+        </div>
       </form>
 
       {/* helper hint */}
@@ -312,6 +431,7 @@ export default function ChatPanel({
         <span className="font-medium text-gray-300">⌘/Ctrl + Enter</span> send ·{" "}
         <span className="font-medium text-gray-300">⌘/Ctrl + L</span> clear ·{" "}
         <span className="font-medium text-gray-300">⌘/Ctrl + .</span> stop ·{" "}
+        <span className="font-medium text-gray-300">⌘/Ctrl + ⇧ + C</span> copy chat ·{" "}
         <span className="font-medium text-gray-300">Esc</span> blur/stop
       </div>
     </div>
