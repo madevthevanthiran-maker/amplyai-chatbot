@@ -1,71 +1,62 @@
 // pages/api/chat.js
 import OpenAI from "openai";
-import { PROMPTS } from "@/lib/prompts";
+import { MODES } from "@/lib/modes";
 
-/**
- * Shape of PROMPTS we're expecting:
- * export const PROMPTS = {
- *   chat:    { system: "...", style: "" },
- *   mail:    { system: "...", style: "" },
- *   hire:    { system: "...", style: "" },
- *   planner: { system: "...", style: "" }
- * };
- */
+export const config = {
+  runtime: "edge",
+};
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function encode(str) {
+  return new TextEncoder().encode(str);
+}
 
-export default async function handler(req, res) {
+export default async function handler(req) {
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method not allowed" });
+    return new Response("Method Not Allowed", { status: 405 });
   }
 
+  const body = await req.json();
+  const { mode = "general", messages = [] } = body;
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const systemPrompt = MODES[mode]?.system || MODES.general.system;
+
+  const fullMessages = [
+    { role: "system", content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
   try {
-    const { messages = [], tabId = "chat" } = req.body || {};
-
-    // Pick the right prompt for the active tab (fallback to 'chat')
-    const mode = typeof tabId === "string" ? tabId : "chat";
-    const preset = PROMPTS[mode] || PROMPTS.chat || { system: "", style: "" };
-
-    // Build chat messages: system + style + user/history
-    const chatMessages = [];
-
-    if (preset.system?.trim()) {
-      chatMessages.push({ role: "system", content: preset.system.trim() });
-    }
-
-    if (preset.style?.trim()) {
-      chatMessages.push({ role: "system", content: preset.style.trim() });
-    }
-
-    // Append history/user messages coming from the client
-    for (const m of messages) {
-      // defensive normalization
-      if (!m || typeof m.content !== "string") continue;
-      const role = m.role === "assistant" ? "assistant" : "user";
-      chatMessages.push({ role, content: m.content });
-    }
-
-    // Call OpenAI (non-streamed for simplicity & reliability)
-    const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini", // use any chat-capable model you prefer
-      messages: chatMessages,
+    // Stream with the Chat Completions API
+    const stream = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      messages: fullMessages,
       temperature: 0.3,
+      stream: true,
     });
 
-    const content =
-      completion?.choices?.[0]?.message?.content?.trim() ||
-      "Sorry, I couldn’t generate a response.";
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const part of stream) {
+            const token = part.choices?.[0]?.delta?.content || "";
+            if (token) controller.enqueue(encode(token));
+          }
+        } catch (err) {
+          controller.enqueue(encode("\n\n[Stream ended]"));
+        } finally {
+          controller.close();
+        }
+      },
+    });
 
-    return res.status(200).json({ content });
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    });
   } catch (err) {
-    console.error("API /chat error:", err);
-    return res.status(500).json({
-      error: "Failed to get response from the model.",
-      details:
-        process.env.NODE_ENV === "development" ? String(err?.message || err) : undefined,
-    });
+    return new Response("OpenAI error", { status: 500 });
   }
 }
