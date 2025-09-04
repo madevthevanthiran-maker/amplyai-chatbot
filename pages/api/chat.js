@@ -1,62 +1,26 @@
 // pages/api/chat.js
-import OpenAI from "openai";
-import { MODES } from "@/lib/modes";
-
-export const config = {
-  runtime: "edge",
-};
-
-function encode(str) {
-  return new TextEncoder().encode(str);
-}
-
-export default async function handler(req) {
-  if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
-  }
-
-  const body = await req.json();
-  const { mode = "general", messages = [] } = body;
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const systemPrompt = MODES[mode]?.system || MODES.general.system;
-
-  const fullMessages = [
-    { role: "system", content: systemPrompt },
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
-  ];
-
+export default async function handler(req, res) {
   try {
-    // Stream with the Chat Completions API
-    const stream = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      messages: fullMessages,
-      temperature: 0.3,
-      stream: true,
-    });
+    const { text, mode } = req.body || {};
+    // TODO: Replace with your model call.
+    // This is a stub to show different formatting hints per mode.
+    let prefix = "";
+    if (mode === "mailmate") {
+      prefix = "📧 MailMate draft\n\n";
+    } else if (mode === "hirehelper") {
+      prefix = "🧰 HireHelper bullets\n\n";
+    } else if (mode === "planner") {
+      prefix = "🗓️ Planner plan\n\n";
+    } else {
+      prefix = "";
+    }
 
-    const readable = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const part of stream) {
-            const token = part.choices?.[0]?.delta?.content || "";
-            if (token) controller.enqueue(encode(token));
-          }
-        } catch (err) {
-          controller.enqueue(encode("\n\n[Stream ended]"));
-        } finally {
-          controller.close();
-        }
-      },
-    });
+    const reply =
+      prefix +
+      `You said:\n\n${text}\n\n(Replace this with your model output.)`;
 
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-      },
-    });
-  } catch (err) {
-    return new Response("OpenAI error", { status: 500 });
+    res.status(200).json({ ok: true, message: reply });
+  } catch (e) {
+    res.status(200).json({ ok: true, message: "Error. Please try again." });
   }
 }
