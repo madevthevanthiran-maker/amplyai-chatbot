@@ -1,221 +1,152 @@
 // components/ChatPanel.jsx
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import QuickActions from "@/components/QuickActions";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import PresetBar from "./PresetBar";
 import { MODES } from "@/lib/modes";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
-const LS_KEY = "amplyai.conversations.v2";
+const MIN_H = 48;   // px
+const MAX_H = 240;  // px
 
-function loadAll() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
-  catch { return {}; }
-}
-function saveAll(all) {
-  localStorage.setItem(LS_KEY, JSON.stringify(all));
-}
+export default function ChatPanel({
+  activeMode = "general",
+  onSend,            // (text, mode) => void
+  messages = [],     // array of { role: "user"|"assistant", content: string }
+  placeholder,
+}) {
+  const mode = MODES[activeMode] ?? MODES.general;
 
-function PresetButtons({ presets = [], onPick }) {
-  if (!presets.length) return null;
-  return (
-    <div className="flex flex-wrap gap-2 mb-3">
-      {presets.map((p, i) => (
-        <button
-          key={i}
-          type="button"
-          onClick={() => onPick(p.text)}
-          className="px-3 py-1.5 rounded-full text-sm bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700"
-          title={p.text.length > 120 ? p.text.slice(0, 120) + "…" : p.text}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export default function ChatPanel() {
-  const [mode, setMode] = useState(MODES.general.id);
-  const [messages, setMessages] = useState([]);
+  // per-mode height memory
+  const lsKey = `inputH:${activeMode}`;
   const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [height, setHeight] = useState(
+    () => Number(localStorage.getItem(lsKey)) || MIN_H
+  );
 
-  const bottomRef = useRef(null);
-  const textareaRef = useRef(null);
-
-  const scrollToBottom = () =>
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-
-  const autosizeTextarea = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "0px";
-    const max = 240; // cap
-    const next = Math.min(el.scrollHeight, max);
-    el.style.height = Math.max(next, 64) + "px";
-  };
-
-  useEffect(scrollToBottom, [messages, isSending]);
-  useEffect(autosizeTextarea, [input]);
+  const taRef = useRef(null);
+  const boxRef = useRef(null);
 
   useEffect(() => {
-    const all = loadAll();
-    setMessages(all[mode]?.messages || []);
-    if ((!all[mode] || !all[mode].messages?.length) && MODES[mode].template) {
-      setInput(MODES[mode].template);
-    } else {
-      setInput("");
-    }
-    setTimeout(autosizeTextarea, 0);
-  }, [mode]);
+    autoGrow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const persist = useCallback((nextMsgs) => {
-    const all = loadAll();
-    all[mode] = { messages: nextMsgs };
-    saveAll(all);
-  }, [mode]);
+  useEffect(() => {
+    localStorage.setItem(lsKey, String(height));
+  }, [height, lsKey]);
 
-  const onPickMode = (m) => setMode(m.id);
-
-  const sendMessage = async (text) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    const userMsg = { role: "user", content: trimmed };
-    const next = [...messages, userMsg];
-    setMessages(next);
-    persist(next);
-    setInput("");
-    setIsSending(true);
-
-    try {
-      const res = await fetch("/api/chat?stream=1", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, messages: next }),
-      });
-
-      if (!res.ok || !res.body) {
-        const fallback = { role: "assistant", content: "Sorry, something went wrong. Please try again." };
-        const next2 = [...next, fallback];
-        setMessages(next2); persist(next2);
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let assistant = { role: "assistant", content: "" };
-      let appended = false;
-
-      const pushChunk = (chunk) => {
-        assistant.content += chunk;
-        if (!appended) {
-          appended = true;
-          setMessages((cur) => { const nx = [...cur, assistant]; persist(nx); return nx; });
-        } else {
-          setMessages((cur) => { const nx = [...cur]; nx[nx.length - 1] = { ...assistant }; persist(nx); return nx; });
-        }
-      };
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        if (chunk) pushChunk(chunk);
-      }
-    } catch {
-      const next2 = [...messages, { role: "assistant", content: "Network error. Please try again." }];
-      setMessages(next2); persist(next2);
-    } finally {
-      setIsSending(false);
-      scrollToBottom();
-      setTimeout(autosizeTextarea, 0);
-    }
+  const autoGrow = () => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const next = Math.min(Math.max(ta.scrollHeight, MIN_H), MAX_H);
+    ta.style.height = `${next}px`;
+    setHeight(next);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    sendMessage(input);
+  const handleChange = (e) => {
+    setInput(e.target.value);
+    autoGrow();
   };
 
+  // Enter = send ; Shift+Enter = newline
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage(input);
+      submit();
     }
   };
 
-  const pastePreset = (text) => {
-    setInput(text);
-    setTimeout(() => {
-      textareaRef.current?.focus();
-      autosizeTextarea();
-    }, 0);
+  const submit = () => {
+    const text = input.trim();
+    if (!text) return;
+    onSend?.(text, activeMode);
+    setInput("");
+    requestAnimationFrame(() => {
+      autoGrow();
+      taRef.current?.focus();
+    });
   };
 
-  const active = MODES[mode];
+  const insertPreset = (text) => {
+    setInput((prev) => (prev ? `${prev}\n\n${text}` : text));
+    requestAnimationFrame(autoGrow);
+    taRef.current?.focus();
+  };
+
+  const showTemplateHint = useMemo(
+    () => Boolean(mode?.template && !input?.trim()),
+    [mode?.template, input]
+  );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)]"> {/* taller canvas */}
-      {/* Mode chips */}
-      <QuickActions activeMode={mode} onPick={onPickMode} />
-
-      {/* Mode description */}
-      <div className="text-xs text-slate-400 mt-1">{active.description}</div>
-
-      {/* Preset buttons */}
-      <PresetButtons presets={active.presets} onPick={pastePreset} />
-
-      {/* Messages area – large, scrollable */}
+    <div className="flex h-full w-full flex-col">
+      {/* Transcript */}
       <div
-        className="
-          flex-1 overflow-y-auto rounded-lg bg-slate-900/30 p-4 space-y-4
-          min-h-[50vh] max-h-[calc(100vh-260px)]
-        "
+        ref={boxRef}
+        className="flex-1 overflow-y-auto rounded-xl bg-slate-900/40 p-4 ring-1 ring-slate-800"
       >
-        {messages.map((m, idx) => (
-          <div key={idx} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`${m.role === "user"
-                ? "bg-blue-600 text-white"
-                : "bg-slate-800 text-slate-100"
-              } max-w-[80%] rounded-xl px-4 py-3 text-[15px] leading-6 whitespace-pre-wrap`}
-            >
-              {m.role === "assistant"
-                ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                : m.content}
-            </div>
+        {messages?.length === 0 && (
+          <div className="mb-4 text-sm text-slate-400">
+            {mode?.description ?? "Ask anything."}
           </div>
-        ))}
-        <div ref={bottomRef} />
+        )}
+
+        <div className="space-y-3">
+          {messages?.map((m, i) => {
+            const isUser = m.role === "user";
+            return (
+              <div key={i} className={`flex ${isUser ? "justify-end" : ""}`}>
+                <div
+                  className={`max-w-[78%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-[15px] leading-relaxed shadow-sm ${
+                    isUser
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-800 text-slate-100 ring-1 ring-slate-700"
+                  }`}
+                >
+                  {m.content}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Composer */}
-      <form onSubmit={handleSubmit} className="mt-3 flex items-end gap-2">
-        <textarea
-          ref={textareaRef}
-          rows={3}
-          placeholder="Shift+Enter for a new line • Enter to send"
-          className="flex-1 rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isSending}
-          style={{ minHeight: 64, lineHeight: "1.45" }}
-        />
-        <button
-          type="submit"
-          disabled={isSending || !input.trim()}
-          className="px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60"
-        >
-          {isSending ? "Sending…" : "Send"}
-        </button>
-      </form>
+      {/* Preset buttons */}
+      <PresetBar presets={mode?.presets} onInsert={insertPreset} />
 
-      {active.template && !messages.length && (
-        <div className="mt-2 text-xs text-slate-400">
-          Tip: This mode has a template. We prefilled your input — edit it and hit <kbd>Enter</kbd>.
+      {/* Input row */}
+      <div className="mt-1 flex items-end gap-2">
+        <div className="relative flex-1">
+          {showTemplateHint && (
+            <div className="pointer-events-none absolute inset-0 select-none whitespace-pre-wrap rounded-lg bg-transparent p-3 text-[13px] leading-6 text-slate-500">
+              {mode.template}
+            </div>
+          )}
+
+          <textarea
+            ref={taRef}
+            value={input}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              placeholder ??
+              "Type your message…  (Enter = send, Shift+Enter = new line)"
+            }
+            className={`h-[${height}px] max-h-[240px] min-h-[48px] w-full resize-y rounded-lg border border-slate-700 bg-slate-900/80 p-3 pr-12 text-[15px] leading-6 text-slate-100 outline-none ring-1 ring-transparent focus:ring-blue-500`}
+            style={{ height }}
+          />
+          <div className="pointer-events-none absolute bottom-2 right-3 text-[11px] text-slate-500">
+            ↵ to send · ⇧↵ newline
+          </div>
         </div>
-      )}
+
+        <button
+          type="button"
+          onClick={submit}
+          className="h-[40px] shrink-0 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-500"
+        >
+          Send
+        </button>
+      </div>
     </div>
   );
 }
