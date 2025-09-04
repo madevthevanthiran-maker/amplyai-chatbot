@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { loadChat, saveChat, clearChat } from "@/utils/chatStorage";
 
 export default function ChatPanel({
   initialMessages = [
@@ -10,12 +11,37 @@ export default function ChatPanel({
   systemHint = "Ask anything… (I can give structured answers and include sources when useful)",
 }) {
   const [messages, setMessages] = useState(initialMessages);
+  const [initialized, setInitialized] = useState(false);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
   const endRef = useRef(null);
   const inputRef = useRef(null);
+  const saveTimer = useRef(null);
 
+  // Load saved chat for this tab on mount
+  useEffect(() => {
+    const saved = loadChat(tabId);
+    if (saved && Array.isArray(saved) && saved.length) {
+      setMessages(saved);
+    } else {
+      setMessages(initialMessages);
+    }
+    setInitialized(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabId]);
+
+  // Persist on every change (debounced a bit)
+  useEffect(() => {
+    if (!initialized) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveChat(tabId, messages);
+    }, 250);
+    return () => clearTimeout(saveTimer.current);
+  }, [messages, tabId, initialized]);
+
+  // Auto-scroll
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isSending]);
@@ -45,21 +71,20 @@ export default function ChatPanel({
       });
 
       if (!res.ok) {
-        // Try to read json; if not, read text.
-        let errDetail = "";
+        let detail = "";
         try {
           const j = await res.json();
-          errDetail = j?.error || JSON.stringify(j);
+          detail = j?.error || JSON.stringify(j);
         } catch {
-          errDetail = await res.text();
+          detail = await res.text();
         }
-        throw new Error(errDetail || `Request failed (${res.status})`);
+        throw new Error(detail || `Request failed (${res.status})`);
       }
 
-      // Insert placeholder assistant message
+      // placeholder assistant bubble
       setMessages((m) => [...m, { role: "assistant", content: "" }]);
 
-      // We will accumulate the entire payload (works for stream or non-stream)
+      // read stream or full body
       const reader = res.body?.getReader?.();
       let fullText = "";
 
@@ -71,11 +96,9 @@ export default function ChatPanel({
           fullText += decoder.decode(value, { stream: true });
         }
       } else {
-        // As a fallback (very rare in browsers)
         fullText = await res.text();
       }
 
-      // Normalize the payload to just the assistant's content
       const assistantContent = extractAssistantContent(fullText);
 
       setMessages((m) => {
@@ -86,10 +109,11 @@ export default function ChatPanel({
     } catch (e) {
       console.error(e);
       setError(e.message || "Something went wrong. Please try again.");
-      // Remove the placeholder assistant message if we added it
-      setMessages((m) => (m[m.length - 1]?.role === "assistant" && m[m.length - 1]?.content === ""
-        ? m.slice(0, -1)
-        : m));
+      setMessages((m) =>
+        m[m.length - 1]?.role === "assistant" && m[m.length - 1]?.content === ""
+          ? m.slice(0, -1)
+          : m
+      );
     } finally {
       setIsSending(false);
       inputRef.current?.focus();
@@ -101,6 +125,14 @@ export default function ChatPanel({
       e.preventDefault();
       if (canSend) sendMessage(input);
     }
+  }
+
+  function newChat() {
+    clearChat(tabId);
+    setMessages(initialMessages);
+    setInput("");
+    setError("");
+    setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   return (
@@ -144,36 +176,31 @@ export default function ChatPanel({
         >
           Send
         </button>
+        <button
+          onClick={newChat}
+          className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5"
+          title="Start a fresh conversation in this tab"
+        >
+          New chat
+        </button>
       </div>
     </div>
   );
 }
 
 /* ---------- Helpers ---------- */
-
-/**
- * Accepts any payload form (streamed text, JSON string, plain string) and
- * returns just the assistant content to display.
- */
 function extractAssistantContent(payload) {
-  // If we already have a string, try to parse JSON; otherwise return as-is.
   let text = typeof payload === "string" ? payload.trim() : "";
 
-  // Some backends send JSON; some send strings. Normalize:
-  // 1) Try JSON.parse on the whole thing.
-  // 2) If it parses and has .message.content or .content, use that.
-  // 3) Otherwise, fallback to the raw text.
-
   try {
-    const maybeObj = JSON.parse(text);
-    if (maybeObj && typeof maybeObj === "object") {
-      if (maybeObj?.message?.content) return String(maybeObj.message.content);
-      if (maybeObj?.content) return String(maybeObj.content);
+    const maybe = JSON.parse(text);
+    if (maybe && typeof maybe === "object") {
+      if (maybe?.message?.content) return String(maybe.message.content);
+      if (maybe?.content) return String(maybe.content);
     }
   } catch {
-    // Not JSON — that’s fine, we’ll use the text directly
+    // not JSON; use as-is
   }
-
   return text;
 }
 
