@@ -1,6 +1,12 @@
 // components/PresetBar.jsx
 import React from "react";
 
+/**
+ * PresetBar
+ * props:
+ *  - presets: Array<{ label: string, text: string }>
+ *  - onInsert: (text: string) => void
+ */
 export default function PresetBar({ presets = [], onInsert }) {
   if (!presets?.length) return null;
 
@@ -11,7 +17,7 @@ export default function PresetBar({ presets = [], onInsert }) {
           <button
             key={idx}
             type="button"
-            className="whitespace-nowrap rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-xs text-slate-100 hover:bg-slate-700"
+            className="preset-btn"
             title={p.text?.slice(0, 120)}
             onClick={() => onInsert?.(p.text ?? "")}
           >
