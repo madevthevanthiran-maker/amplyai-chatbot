@@ -1,5 +1,5 @@
 // components/ChatPanel.jsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import QuickActions from "@/components/QuickActions";
 import { MODES } from "@/lib/modes";
 import ReactMarkdown from "react-markdown";
@@ -15,6 +15,25 @@ function saveAll(all) {
   localStorage.setItem(LS_KEY, JSON.stringify(all));
 }
 
+function PresetButtons({ presets = [], onPick }) {
+  if (!presets.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mb-3">
+      {presets.map((p, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onPick(p.text)}
+          className="px-3 py-1.5 rounded-full text-sm bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700"
+          title={p.text.length > 120 ? p.text.slice(0, 120) + "…" : p.text}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ChatPanel() {
   const [mode, setMode] = useState(MODES.general.id);
   const [messages, setMessages] = useState([]);
@@ -24,23 +43,21 @@ export default function ChatPanel() {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // ---------- helpers ----------
   const scrollToBottom = () =>
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 
   const autosizeTextarea = () => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "0px";                 // reset first
-    const max = 240;                         // cap (px) ~ 6–7 lines
+    el.style.height = "0px";
+    const max = 240; // cap
     const next = Math.min(el.scrollHeight, max);
-    el.style.height = Math.max(next, 64) + "px"; // min ~64px
+    el.style.height = Math.max(next, 64) + "px";
   };
 
   useEffect(scrollToBottom, [messages, isSending]);
   useEffect(autosizeTextarea, [input]);
 
-  // ---------- per-mode persistence ----------
   useEffect(() => {
     const all = loadAll();
     setMessages(all[mode]?.messages || []);
@@ -49,7 +66,6 @@ export default function ChatPanel() {
     } else {
       setInput("");
     }
-    // ensure textarea adjusts after switching
     setTimeout(autosizeTextarea, 0);
   }, [mode]);
 
@@ -61,7 +77,6 @@ export default function ChatPanel() {
 
   const onPickMode = (m) => setMode(m.id);
 
-  // ---------- send / stream ----------
   const sendMessage = async (text) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -124,45 +139,61 @@ export default function ChatPanel() {
   };
 
   const handleKeyDown = (e) => {
-    // ENTER = send, SHIFT+ENTER = newline
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage(input);
     }
   };
 
+  const pastePreset = (text) => {
+    setInput(text);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      autosizeTextarea();
+    }, 0);
+  };
+
   const active = MODES[mode];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-[calc(100vh-120px)]"> {/* taller canvas */}
       {/* Mode chips */}
       <QuickActions activeMode={mode} onPick={onPickMode} />
-      <div className="text-xs text-slate-400 mb-2">{active.description}</div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto rounded-lg bg-slate-900/30 p-4 space-y-4">
+      {/* Mode description */}
+      <div className="text-xs text-slate-400 mt-1">{active.description}</div>
+
+      {/* Preset buttons */}
+      <PresetButtons presets={active.presets} onPick={pastePreset} />
+
+      {/* Messages area – large, scrollable */}
+      <div
+        className="
+          flex-1 overflow-y-auto rounded-lg bg-slate-900/30 p-4 space-y-4
+          min-h-[50vh] max-h-[calc(100vh-260px)]
+        "
+      >
         {messages.map((m, idx) => (
           <div key={idx} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`${m.role === "user"
                 ? "bg-blue-600 text-white"
                 : "bg-slate-800 text-slate-100"
-              } max-w-[80%] rounded-xl px-4 py-3 text-[15px] leading-6`}>
-              {m.role === "assistant" ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-              ) : (
-                <pre className="whitespace-pre-wrap font-sans">{m.content}</pre>
-              )}
+              } max-w-[80%] rounded-xl px-4 py-3 text-[15px] leading-6 whitespace-pre-wrap`}
+            >
+              {m.role === "assistant"
+                ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                : m.content}
             </div>
           </div>
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
+      {/* Composer */}
       <form onSubmit={handleSubmit} className="mt-3 flex items-end gap-2">
         <textarea
           ref={textareaRef}
-          rows={3}                                            // starts taller
+          rows={3}
           placeholder="Shift+Enter for a new line • Enter to send"
           className="flex-1 rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none"
           value={input}
