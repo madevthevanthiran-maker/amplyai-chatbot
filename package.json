@@ -1,6 +1,7 @@
 {
   "name": "amplyai-chatbot",
   "private": true,
+  "version": "1.0.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,13 +12,11 @@
     "next": "14.2.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
     "react-markdown": "^9.0.0",
-    "remark-gfm": "^4.0.0"
-  },
-  "devDependencies": {
-    "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.38",
-    "tailwindcss": "^3.4.10"
+    "remark-gfm": "^4.0.0",
+    "tailwindcss": "^3.4.10",
+    "postcss": "^8.4.41",
+    "autoprefixer": "^10.4.20"
   }
 }
