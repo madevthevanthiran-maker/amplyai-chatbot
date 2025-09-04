@@ -2,16 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/**
- * ChatPanel
- * - Streams if /api/chat returns a ReadableStream; otherwise handles JSON.
- * - Renders assistant messages as Markdown (with GFM).
- *
- * Optional props:
- *   - initialMessages: [{role:"assistant"|"user", content:string}]
- *   - tabId: string (if backend distinguishes tabs)
- *   - systemHint: string (placeholder hint in the input)
- */
 export default function ChatPanel({
   initialMessages = [
     { role: "assistant", content: "Hello! How can I assist you today?" },
@@ -26,7 +16,6 @@ export default function ChatPanel({
   const endRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Auto-scroll on new messages
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isSending]);
@@ -41,7 +30,6 @@ export default function ChatPanel({
     setError("");
     setIsSending(true);
 
-    // Append user message immediately
     const userMsg = { role: "user", content: text.trim() };
     setMessages((m) => [...m, userMsg]);
     setInput("");
@@ -61,7 +49,7 @@ export default function ChatPanel({
         throw new Error(err?.error || `Request failed (${res.status})`);
       }
 
-      // Try streaming first
+      // STREAMING
       const reader = res.body?.getReader?.();
       if (reader) {
         let assistantContent = "";
@@ -73,7 +61,7 @@ export default function ChatPanel({
           if (done) break;
           assistantContent += decoder.decode(value, { stream: true });
           setMessages((m) => {
-            const copy = m.slice();
+            const copy = [...m];
             copy[copy.length - 1] = {
               role: "assistant",
               content: assistantContent,
@@ -82,28 +70,24 @@ export default function ChatPanel({
           });
         }
       } else {
-        // Fallback JSON (non-streaming)
+        // NON-STREAMING JSON
         const data = await res.json();
 
-        // Extract assistant text robustly:
-        //  - { message: { role, content } }
-        //  - { content: "..." }
-        //  - "..." (raw string)
+        // 🔑 Normalize structure
         let assistantContent = "";
-        if (typeof data === "string") {
-          assistantContent = data;
-        } else if (data?.message?.content) {
+        if (data?.message?.content) {
           assistantContent = data.message.content;
         } else if (data?.content) {
           assistantContent = data.content;
+        } else if (typeof data === "string") {
+          assistantContent = data;
         } else {
-          // Last resort: render something, but don't dump whole JSON
-          assistantContent = "";
+          assistantContent = JSON.stringify(data); // fallback for debugging
         }
 
         setMessages((m) => [
           ...m,
-          { role: "assistant", content: String(assistantContent || "") },
+          { role: "assistant", content: assistantContent },
         ]);
       }
     } catch (e) {
@@ -116,7 +100,6 @@ export default function ChatPanel({
   }
 
   function onKeyDown(e) {
-    // Enter sends; Shift+Enter for newline
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (canSend) sendMessage(input);
@@ -125,7 +108,6 @@ export default function ChatPanel({
 
   return (
     <div className="flex h-full flex-col">
-      {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto rounded-xl bg-[#0E1625]/50 p-4 sm:p-6">
         {messages.map((m, idx) => (
           <MessageBubble key={idx} role={m.role} content={m.content} />
@@ -136,7 +118,6 @@ export default function ChatPanel({
         <div ref={endRef} />
       </div>
 
-      {/* ERROR */}
       {error && (
         <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           ⚠ {error}{" "}
@@ -149,7 +130,6 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* INPUT */}
       <div className="mt-3 flex items-center gap-3">
         <textarea
           ref={inputRef}
@@ -158,7 +138,7 @@ export default function ChatPanel({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={systemHint}
-          className="min-h-[48px] w-full resize-none rounded-xl border border-white/10 bg-[#0C1220]/80 px-4 py-3 text-[15px] leading-[1.25rem] text-slate-100 outline-none placeholder:text-slate-500 focus:border-white/20"
+          className="min-h-[48px] w-full resize-none rounded-xl border border-white/10 bg-[#0C1220]/80 px-4 py-3 text-[15px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-white/20"
         />
         <button
           disabled={!canSend}
@@ -168,18 +148,11 @@ export default function ChatPanel({
           Send
         </button>
       </div>
-
-      <p className="mt-2 select-none text-center text-xs text-slate-500">
-        Shortcuts: <span className="opacity-80">/</span> focus ·{" "}
-        <span className="opacity-80">⌘/Ctrl + Enter</span> send ·{" "}
-        <span className="opacity-80">Esc</span> blur
-      </p>
     </div>
   );
 }
 
-/* ---------- Helpers & subcomponents ---------- */
-
+/* ---------- Helpers ---------- */
 async function safeJson(res) {
   try {
     return await res.json();
@@ -190,7 +163,6 @@ async function safeJson(res) {
 
 function MessageBubble({ role, content }) {
   const isAssistant = role === "assistant";
-
   return (
     <div className={`mb-3 flex ${isAssistant ? "justify-start" : "justify-end"}`}>
       <div
@@ -199,48 +171,13 @@ function MessageBubble({ role, content }) {
         }`}
       >
         {isAssistant ? (
-          <div className="prose prose-invert max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-li:my-1 prose-pre:my-3">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {content || ""}
-            </ReactMarkdown>
-          </div>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {content || ""}
+          </ReactMarkdown>
         ) : (
           <p className="whitespace-pre-wrap">{content}</p>
         )}
-
-        {/* Actions row (copy / thumbs) */}
-        <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
-          <button
-            className="hover:text-slate-200"
-            onClick={() => copyToClipboard(content)}
-          >
-            Copy
-          </button>
-          <span className="opacity-40">·</span>
-          <button
-            className="hover:text-slate-200"
-            onClick={() => console.info("thumbs up")}
-            title="Helpful"
-          >
-            👍
-          </button>
-          <button
-            className="hover:text-slate-200"
-            onClick={() => console.info("thumbs down")}
-            title="Not helpful"
-          >
-            👎
-          </button>
-        </div>
       </div>
     </div>
   );
-}
-
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text || "");
-  } catch (e) {
-    console.error("copy failed", e);
-  }
 }
