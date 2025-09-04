@@ -45,54 +45,51 @@ export default function ChatPanel({
       });
 
       if (!res.ok) {
-        const err = await safeJson(res);
-        throw new Error(err?.error || `Request failed (${res.status})`);
+        // Try to read json; if not, read text.
+        let errDetail = "";
+        try {
+          const j = await res.json();
+          errDetail = j?.error || JSON.stringify(j);
+        } catch {
+          errDetail = await res.text();
+        }
+        throw new Error(errDetail || `Request failed (${res.status})`);
       }
 
-      // STREAMING
-      const reader = res.body?.getReader?.();
-      if (reader) {
-        let assistantContent = "";
-        setMessages((m) => [...m, { role: "assistant", content: "" }]);
+      // Insert placeholder assistant message
+      setMessages((m) => [...m, { role: "assistant", content: "" }]);
 
+      // We will accumulate the entire payload (works for stream or non-stream)
+      const reader = res.body?.getReader?.();
+      let fullText = "";
+
+      if (reader) {
         const decoder = new TextDecoder();
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
-          assistantContent += decoder.decode(value, { stream: true });
-          setMessages((m) => {
-            const copy = [...m];
-            copy[copy.length - 1] = {
-              role: "assistant",
-              content: assistantContent,
-            };
-            return copy;
-          });
+          fullText += decoder.decode(value, { stream: true });
         }
       } else {
-        // NON-STREAMING JSON
-        const data = await res.json();
-
-        // 🔑 Normalize structure
-        let assistantContent = "";
-        if (data?.message?.content) {
-          assistantContent = data.message.content;
-        } else if (data?.content) {
-          assistantContent = data.content;
-        } else if (typeof data === "string") {
-          assistantContent = data;
-        } else {
-          assistantContent = JSON.stringify(data); // fallback for debugging
-        }
-
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: assistantContent },
-        ]);
+        // As a fallback (very rare in browsers)
+        fullText = await res.text();
       }
+
+      // Normalize the payload to just the assistant's content
+      const assistantContent = extractAssistantContent(fullText);
+
+      setMessages((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { role: "assistant", content: assistantContent };
+        return copy;
+      });
     } catch (e) {
       console.error(e);
       setError(e.message || "Something went wrong. Please try again.");
+      // Remove the placeholder assistant message if we added it
+      setMessages((m) => (m[m.length - 1]?.role === "assistant" && m[m.length - 1]?.content === ""
+        ? m.slice(0, -1)
+        : m));
     } finally {
       setIsSending(false);
       inputRef.current?.focus();
@@ -153,12 +150,31 @@ export default function ChatPanel({
 }
 
 /* ---------- Helpers ---------- */
-async function safeJson(res) {
+
+/**
+ * Accepts any payload form (streamed text, JSON string, plain string) and
+ * returns just the assistant content to display.
+ */
+function extractAssistantContent(payload) {
+  // If we already have a string, try to parse JSON; otherwise return as-is.
+  let text = typeof payload === "string" ? payload.trim() : "";
+
+  // Some backends send JSON; some send strings. Normalize:
+  // 1) Try JSON.parse on the whole thing.
+  // 2) If it parses and has .message.content or .content, use that.
+  // 3) Otherwise, fallback to the raw text.
+
   try {
-    return await res.json();
+    const maybeObj = JSON.parse(text);
+    if (maybeObj && typeof maybeObj === "object") {
+      if (maybeObj?.message?.content) return String(maybeObj.message.content);
+      if (maybeObj?.content) return String(maybeObj.content);
+    }
   } catch {
-    return null;
+    // Not JSON — that’s fine, we’ll use the text directly
   }
+
+  return text;
 }
 
 function MessageBubble({ role, content }) {
