@@ -4,20 +4,17 @@ import remarkGfm from "remark-gfm";
 
 /**
  * ChatPanel
- * - Drop-in chat UI for AmplyAI
  * - Streams if /api/chat returns a ReadableStream; otherwise handles JSON.
+ * - Renders assistant messages as Markdown (with GFM).
  *
  * Optional props:
  *   - initialMessages: [{role:"assistant"|"user", content:string}]
- *   - tabId: string (if your backend distinguishes tabs)
+ *   - tabId: string (if backend distinguishes tabs)
  *   - systemHint: string (placeholder hint in the input)
  */
 export default function ChatPanel({
   initialMessages = [
-    {
-      role: "assistant",
-      content: "Hello! How can I assist you today?",
-    },
+    { role: "assistant", content: "Hello! How can I assist you today?" },
   ],
   tabId = "chat",
   systemHint = "Ask anything… (I can give structured answers and include sources when useful)",
@@ -44,7 +41,7 @@ export default function ChatPanel({
     setError("");
     setIsSending(true);
 
-    // Append user message
+    // Append user message immediately
     const userMsg = { role: "user", content: text.trim() };
     setMessages((m) => [...m, userMsg]);
     setInput("");
@@ -59,7 +56,6 @@ export default function ChatPanel({
         }),
       });
 
-      // Handle non-OK
       if (!res.ok) {
         const err = await safeJson(res);
         throw new Error(err?.error || `Request failed (${res.status})`);
@@ -78,15 +74,37 @@ export default function ChatPanel({
           assistantContent += decoder.decode(value, { stream: true });
           setMessages((m) => {
             const copy = m.slice();
-            copy[copy.length - 1] = { role: "assistant", content: assistantContent };
+            copy[copy.length - 1] = {
+              role: "assistant",
+              content: assistantContent,
+            };
             return copy;
           });
         }
       } else {
-        // Fallback JSON (non-stream)
+        // Fallback JSON (non-streaming)
         const data = await res.json();
-        const assistant = data?.message ?? data?.content ?? "";
-        setMessages((m) => [...m, { role: "assistant", content: String(assistant) }]);
+
+        // Extract assistant text robustly:
+        //  - { message: { role, content } }
+        //  - { content: "..." }
+        //  - "..." (raw string)
+        let assistantContent = "";
+        if (typeof data === "string") {
+          assistantContent = data;
+        } else if (data?.message?.content) {
+          assistantContent = data.message.content;
+        } else if (data?.content) {
+          assistantContent = data.content;
+        } else {
+          // Last resort: render something, but don't dump whole JSON
+          assistantContent = "";
+        }
+
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: String(assistantContent || "") },
+        ]);
       }
     } catch (e) {
       console.error(e);
@@ -98,6 +116,7 @@ export default function ChatPanel({
   }
 
   function onKeyDown(e) {
+    // Enter sends; Shift+Enter for newline
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (canSend) sendMessage(input);
@@ -173,16 +192,10 @@ function MessageBubble({ role, content }) {
   const isAssistant = role === "assistant";
 
   return (
-    <div
-      className={`mb-3 flex ${
-        isAssistant ? "justify-start" : "justify-end"
-      }`}
-    >
+    <div className={`mb-3 flex ${isAssistant ? "justify-start" : "justify-end"}`}>
       <div
         className={`max-w-[92%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed md:max-w-[80%] ${
-          isAssistant
-            ? "bg-[#0E1526] text-slate-100"
-            : "bg-[#2D5BFF] text-white"
+          isAssistant ? "bg-[#0E1526] text-slate-100" : "bg-[#2D5BFF] text-white"
         }`}
       >
         {isAssistant ? (
