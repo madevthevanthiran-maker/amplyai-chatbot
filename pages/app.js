@@ -1,149 +1,176 @@
-// pages/app.jsx
-import { useState, useEffect } from "react";
-import Head from "next/head";
-import ChatPanel from "@/components/ChatPanel";
+// components/ChatPanel.jsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import QuickActions from "@/components/QuickActions";
+import { MODES } from "@/lib/modes";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-const TABS = [
-  {
-    id: "chat",
-    label: "Chat (general)",
-    initial: [
-      {
-        role: "assistant",
-        content:
-          "Hey! I’m your Progress Partner. Ask anything — I can summarize, research, reason step-by-step, and include sources when useful.",
-      },
-    ],
-    hint:
-      "Ask anything… (I can give structured answers and include sources when useful)",
-  },
-  {
-    id: "mailmate",
-    label: "MailMate (email)",
-    initial: [
-      {
-        role: "assistant",
-        content:
-          "MailMate here. What’s the goal of the email? Paste context or bullets and tell me tone (concise, warm, formal). I’ll draft, subject line first.",
-      },
-    ],
-    hint: "Describe the email goal, tone, and paste any context…",
-  },
-  {
-    id: "hirehelper",
-    label: "HireHelper (resume)",
-    initial: [
-      {
-        role: "assistant",
-        content:
-          "HireHelper ready. Paste messy experience/notes. I’ll craft STAR-tight, quantified bullets and align them to a role/ATS if you tell me.",
-      },
-    ],
-    hint:
-      "Paste raw experience. Optionally add target role/ATS keywords for alignment…",
-  },
-  {
-    id: "planner",
-    label: "Planner (study/work)",
-    initial: [
-      {
-        role: "assistant",
-        content:
-          "Planner here. What’s the outcome and deadline? I’ll break it into realistic tasks with buffers and build a schedule you can actually follow.",
-      },
-    ],
-    hint:
-      "Describe the goal and deadline. I’ll make a buffered plan with milestones…",
-  },
-];
+const LS_KEY = "amplyai.conversations.v2"; // v2 so we don’t clash with old tabs
 
-export default function AppPage() {
-  const [active, setActive] = useState("chat");
+function loadAll() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
+  catch { return {}; }
+}
+function saveAll(all) {
+  localStorage.setItem(LS_KEY, JSON.stringify(all));
+}
 
-  // optional: remember last-opened tab across reloads
+export default function ChatPanel() {
+  const [mode, setMode] = useState(MODES.general.id);
+  const [messages, setMessages] = useState([]); // [{role, content}]
+  const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const bottomRef = useRef(null);
+
+  // Load/save per-mode conversations
   useEffect(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem("amplyai.v1.lastTab") : null;
-    if (saved && TABS.some(t => t.id === saved)) setActive(saved);
-  }, []);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("amplyai.v1.lastTab", active);
+    const all = loadAll();
+    setMessages(all[mode]?.messages || []);
+    // optional: prefill on first open if empty and mode has a template
+    if ((!all[mode] || !all[mode].messages?.length) && MODES[mode].template) {
+      setInput(MODES[mode].template);
     }
-  }, [active]);
+  }, [mode]);
 
-  const current = TABS.find((t) => t.id === active) ?? TABS[0];
+  const persist = useCallback((nextMsgs) => {
+    const all = loadAll();
+    all[mode] = { messages: nextMsgs };
+    saveAll(all);
+  }, [mode]);
+
+  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  useEffect(scrollToBottom, [messages, isSending]);
+
+  const onPickMode = (m) => {
+    setMode(m.id);
+  };
+
+  const sendMessage = async (text) => {
+    if (!text.trim()) return;
+    const userMsg = { role: "user", content: text.trim() };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    persist(next);
+    setInput("");
+    setIsSending(true);
+
+    try {
+      const res = await fetch("/api/chat?stream=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode,                // tell API which brain to use
+          messages: next,      // user + prior history
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        const fallback = { role: "assistant", content: "Sorry, something went wrong. Please try again." };
+        const next2 = [...next, fallback];
+        setMessages(next2); persist(next2);
+        return;
+      }
+
+      // Stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let assistant = { role: "assistant", content: "" };
+      let appended = false;
+
+      // Append empty assistant, then grow it as chunks come in
+      const pushChunk = (chunk) => {
+        assistant.content += chunk;
+        if (!appended) {
+          appended = true;
+          setMessages((cur) => {
+            const nx = [...cur, assistant];
+            persist(nx);
+            return nx;
+          });
+        } else {
+          setMessages((cur) => {
+            const nx = [...cur];
+            nx[nx.length - 1] = { ...assistant };
+            persist(nx);
+            return nx;
+          });
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        pushChunk(chunk);
+      }
+    } catch (e) {
+      const next2 = [...messages, { role: "assistant", content: "Network error. Please try again." }];
+      setMessages(next2); persist(next2);
+    } finally {
+      setIsSending(false);
+      scrollToBottom();
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    sendMessage(input);
+  };
+
+  const active = MODES[mode];
 
   return (
-    <>
-      <Head>
-        <title>AmplyAI — Progress Partner</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </Head>
+    <div className="flex flex-col h-full">
+      {/* Mode chips */}
+      <QuickActions activeMode={mode} onPick={onPickMode} />
 
-      <div className="min-h-screen bg-[#0A1020] text-slate-100">
-        {/* Top bar */}
-        <header className="sticky top-0 z-20 border-b border-white/10 bg-[#0A1020]/80 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#2D5BFF]" />
-              <span className="text-[15px] font-semibold">AmplyAI</span>
-              <span className="mx-2 text-slate-500">—</span>
-              <span className="text-[14px] text-slate-400">Progress Partner</span>
-            </div>
+      {/* small hint under chips */}
+      <div className="text-xs text-slate-400 mb-2">{active.description}</div>
 
-            {/* simple right-side actions (optional) */}
-            <div className="hidden items-center gap-2 sm:flex">
-              <a
-                href="/pricing"
-                className="rounded-full border border-white/15 px-3 py-1.5 text-[13px] text-slate-200 hover:bg-white/5"
-              >
-                Pricing
-              </a>
-              <a
-                href="mailto:hello@amplyai.org?subject=AmplyAI%20feedback"
-                className="rounded-full border border-white/15 px-3 py-1.5 text-[13px] text-slate-200 hover:bg-white/5"
-              >
-                Feedback
-              </a>
-              <span className="rounded-full border border-white/15 px-2 py-1 text-[12px] text-slate-400">
-                ⌘K
-              </span>
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto rounded-lg bg-slate-900/30 p-4 space-y-4">
+        {messages.map((m, idx) => (
+          <div key={idx} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`${m.role === "user"
+                ? "bg-blue-600 text-white"
+                : "bg-slate-800 text-slate-100"
+              } max-w-[80%] rounded-xl px-4 py-3 text-[15px] leading-6`}>
+              {m.role === "assistant" ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+              ) : (
+                <pre className="whitespace-pre-wrap font-sans">{m.content}</pre>
+              )}
             </div>
           </div>
-
-          {/* Tab pills */}
-          <nav className="mx-auto max-w-6xl px-3 pb-3">
-            <div className="flex flex-wrap gap-2">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setActive(t.id)}
-                  className={`rounded-full px-3.5 py-1.5 text-[13px] ${
-                    active === t.id
-                      ? "bg-[#2D5BFF] text-white"
-                      : "bg-white/5 text-slate-300 hover:bg-white/7"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </nav>
-        </header>
-
-        {/* Main chat container */}
-        <main className="mx-auto max-w-6xl px-3 pb-10 pt-6">
-          <div className="rounded-2xl border border-white/10 bg-[#0B1222]/60 p-3 sm:p-4">
-            {/* Here we mount ONE panel, switching tabId/props.
-                ChatPanel persists per-tab in localStorage, so history is restored. */}
-            <ChatPanel
-              tabId={current.id}
-              initialMessages={current.initial}
-              systemHint={current.hint}
-            />
-          </div>
-        </main>
+        ))}
+        <div ref={bottomRef} />
       </div>
-    </>
+
+      {/* Input */}
+      <form onSubmit={handleSubmit} className="mt-3 flex gap-2">
+        <textarea
+          rows={1}
+          placeholder="Ask anything… or use a Quick Action to prefill a template."
+          className="flex-1 resize-none rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={isSending}
+        />
+        <button
+          type="submit"
+          disabled={isSending || !input.trim()}
+          className="px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60"
+        >
+          {isSending ? "Sending…" : "Send"}
+        </button>
+      </form>
+
+      {/* Tips for each mode */}
+      {active.template && !messages.length && (
+        <div className="mt-2 text-xs text-slate-400">
+          Tip: This mode has a template. We prefilled your input — edit it and hit Send.
+        </div>
+      )}
+    </div>
   );
 }
