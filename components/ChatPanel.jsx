@@ -1,98 +1,176 @@
-import { useState, useEffect, useRef } from "react";
+// components/ChatPanel.jsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import QuickActions from "@/components/QuickActions";
+import { MODES } from "@/lib/modes";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-export default function ChatPanel({ tabId }) {
-  const [messages, setMessages] = useState([]);
+const LS_KEY = "amplyai.conversations.v2"; // v2 so we don’t clash with old tabs
+
+function loadAll() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
+  catch { return {}; }
+}
+function saveAll(all) {
+  localStorage.setItem(LS_KEY, JSON.stringify(all));
+}
+
+export default function ChatPanel() {
+  const [mode, setMode] = useState(MODES.general.id);
+  const [messages, setMessages] = useState([]); // [{role, content}]
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const endRef = useRef(null);
+  const [isSending, setIsSending] = useState(false);
+  const bottomRef = useRef(null);
 
+  // Load/save per-mode conversations
   useEffect(() => {
-    // scroll to bottom when messages update
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const all = loadAll();
+    setMessages(all[mode]?.messages || []);
+    // optional: prefill on first open if empty and mode has a template
+    if ((!all[mode] || !all[mode].messages?.length) && MODES[mode].template) {
+      setInput(MODES[mode].template);
+    }
+  }, [mode]);
 
-  async function sendMessage() {
-    if (!input.trim()) return;
+  const persist = useCallback((nextMsgs) => {
+    const all = loadAll();
+    all[mode] = { messages: nextMsgs };
+    saveAll(all);
+  }, [mode]);
 
-    const userMsg = { role: "user", content: input.trim() };
-    setMessages(prev => [...prev, userMsg]);
+  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  useEffect(scrollToBottom, [messages, isSending]);
+
+  const onPickMode = (m) => {
+    setMode(m.id);
+  };
+
+  const sendMessage = async (text) => {
+    if (!text.trim()) return;
+    const userMsg = { role: "user", content: text.trim() };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    persist(next);
     setInput("");
-    setLoading(true);
+    setIsSending(true);
 
     try {
-      const payload = {
-        messages: [...messages, userMsg],
-        tabId, // <-- this tells backend which mode we're in
-      };
-
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          mode,                // tell API which brain to use
+          messages: next,      // user + prior history
+        }),
       });
 
-      if (!res.ok) {
-        throw new Error("API request failed");
+      if (!res.ok || !res.body) {
+        const fallback = { role: "assistant", content: "Sorry, something went wrong. Please try again." };
+        const next2 = [...next, fallback];
+        setMessages(next2); persist(next2);
+        return;
       }
 
-      const data = await res.json();
-      const assistantMsg = { role: "assistant", content: data.content || "" };
-      setMessages(prev => [...prev, assistantMsg]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [
-        ...prev,
-        { role: "assistant", content: "⚠️ Something went wrong. Please try again." },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  }
+      // Stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let assistant = { role: "assistant", content: "" };
+      let appended = false;
 
-  function handleKeyPress(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+      // Append empty assistant, then grow it as chunks come in
+      const pushChunk = (chunk) => {
+        assistant.content += chunk;
+        if (!appended) {
+          appended = true;
+          setMessages((cur) => {
+            const nx = [...cur, assistant];
+            persist(nx);
+            return nx;
+          });
+        } else {
+          setMessages((cur) => {
+            const nx = [...cur];
+            nx[nx.length - 1] = { ...assistant };
+            persist(nx);
+            return nx;
+          });
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        pushChunk(chunk);
+      }
+    } catch (e) {
+      const next2 = [...messages, { role: "assistant", content: "Network error. Please try again." }];
+      setMessages(next2); persist(next2);
+    } finally {
+      setIsSending(false);
+      scrollToBottom();
     }
-  }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    sendMessage(input);
+  };
+
+  const active = MODES[mode];
 
   return (
     <div className="flex flex-col h-full">
-      {/* Chat messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`p-3 rounded-lg max-w-xl ${
-              m.role === "user"
-                ? "bg-blue-600 text-white ml-auto"
-                : "bg-gray-800 text-gray-100"
-            }`}
-          >
-            {m.content}
+      {/* Mode chips */}
+      <QuickActions activeMode={mode} onPick={onPickMode} />
+
+      {/* small hint under chips */}
+      <div className="text-xs text-slate-400 mb-2">{active.description}</div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto rounded-lg bg-slate-900/30 p-4 space-y-4">
+        {messages.map((m, idx) => (
+          <div key={idx} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`${m.role === "user"
+                ? "bg-blue-600 text-white"
+                : "bg-slate-800 text-slate-100"
+              } max-w-[80%] rounded-xl px-4 py-3 text-[15px] leading-6`}>
+              {m.role === "assistant" ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+              ) : (
+                <pre className="whitespace-pre-wrap font-sans">{m.content}</pre>
+              )}
+            </div>
           </div>
         ))}
-        <div ref={endRef} />
+        <div ref={bottomRef} />
       </div>
 
-      {/* Input box */}
-      <div className="border-t border-gray-700 p-3 flex items-center">
+      {/* Input */}
+      <form onSubmit={handleSubmit} className="mt-3 flex gap-2">
         <textarea
-          className="flex-1 resize-none rounded-md bg-gray-900 text-gray-100 p-2 focus:outline-none"
           rows={1}
+          placeholder="Ask anything… or use a Quick Action to prefill a template."
+          className="flex-1 resize-none rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
           value={input}
-          placeholder="Ask anything..."
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyPress}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={isSending}
         />
         <button
-          onClick={sendMessage}
-          disabled={loading}
-          className="ml-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-white disabled:opacity-50"
+          type="submit"
+          disabled={isSending || !input.trim()}
+          className="px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60"
         >
-          {loading ? "..." : "Send"}
+          {isSending ? "Sending…" : "Send"}
         </button>
-      </div>
+      </form>
+
+      {/* Tips for each mode */}
+      {active.template && !messages.length && (
+        <div className="mt-2 text-xs text-slate-400">
+          Tip: This mode has a template. We prefilled your input — edit it and hit Send.
+        </div>
+      )}
     </div>
   );
 }
