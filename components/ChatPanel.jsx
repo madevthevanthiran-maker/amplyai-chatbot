@@ -5,7 +5,7 @@ import { MODES } from "@/lib/modes";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const LS_KEY = "amplyai.conversations.v2"; // v2 so we don’t clash with old tabs
+const LS_KEY = "amplyai.conversations.v2";
 
 function loadAll() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
@@ -17,19 +17,40 @@ function saveAll(all) {
 
 export default function ChatPanel() {
   const [mode, setMode] = useState(MODES.general.id);
-  const [messages, setMessages] = useState([]); // [{role, content}]
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const bottomRef = useRef(null);
 
-  // Load/save per-mode conversations
+  const bottomRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // ---------- helpers ----------
+  const scrollToBottom = () =>
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+
+  const autosizeTextarea = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";                 // reset first
+    const max = 240;                         // cap (px) ~ 6–7 lines
+    const next = Math.min(el.scrollHeight, max);
+    el.style.height = Math.max(next, 64) + "px"; // min ~64px
+  };
+
+  useEffect(scrollToBottom, [messages, isSending]);
+  useEffect(autosizeTextarea, [input]);
+
+  // ---------- per-mode persistence ----------
   useEffect(() => {
     const all = loadAll();
     setMessages(all[mode]?.messages || []);
-    // optional: prefill on first open if empty and mode has a template
     if ((!all[mode] || !all[mode].messages?.length) && MODES[mode].template) {
       setInput(MODES[mode].template);
+    } else {
+      setInput("");
     }
+    // ensure textarea adjusts after switching
+    setTimeout(autosizeTextarea, 0);
   }, [mode]);
 
   const persist = useCallback((nextMsgs) => {
@@ -38,16 +59,14 @@ export default function ChatPanel() {
     saveAll(all);
   }, [mode]);
 
-  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  useEffect(scrollToBottom, [messages, isSending]);
+  const onPickMode = (m) => setMode(m.id);
 
-  const onPickMode = (m) => {
-    setMode(m.id);
-  };
-
+  // ---------- send / stream ----------
   const sendMessage = async (text) => {
-    if (!text.trim()) return;
-    const userMsg = { role: "user", content: text.trim() };
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const userMsg = { role: "user", content: trimmed };
     const next = [...messages, userMsg];
     setMessages(next);
     persist(next);
@@ -58,10 +77,7 @@ export default function ChatPanel() {
       const res = await fetch("/api/chat?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,                // tell API which brain to use
-          messages: next,      // user + prior history
-        }),
+        body: JSON.stringify({ mode, messages: next }),
       });
 
       if (!res.ok || !res.body) {
@@ -71,29 +87,18 @@ export default function ChatPanel() {
         return;
       }
 
-      // Stream
       const reader = res.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let assistant = { role: "assistant", content: "" };
       let appended = false;
 
-      // Append empty assistant, then grow it as chunks come in
       const pushChunk = (chunk) => {
         assistant.content += chunk;
         if (!appended) {
           appended = true;
-          setMessages((cur) => {
-            const nx = [...cur, assistant];
-            persist(nx);
-            return nx;
-          });
+          setMessages((cur) => { const nx = [...cur, assistant]; persist(nx); return nx; });
         } else {
-          setMessages((cur) => {
-            const nx = [...cur];
-            nx[nx.length - 1] = { ...assistant };
-            persist(nx);
-            return nx;
-          });
+          setMessages((cur) => { const nx = [...cur]; nx[nx.length - 1] = { ...assistant }; persist(nx); return nx; });
         }
       };
 
@@ -101,14 +106,15 @@ export default function ChatPanel() {
         const { value, done } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        pushChunk(chunk);
+        if (chunk) pushChunk(chunk);
       }
-    } catch (e) {
+    } catch {
       const next2 = [...messages, { role: "assistant", content: "Network error. Please try again." }];
       setMessages(next2); persist(next2);
     } finally {
       setIsSending(false);
       scrollToBottom();
+      setTimeout(autosizeTextarea, 0);
     }
   };
 
@@ -117,14 +123,20 @@ export default function ChatPanel() {
     sendMessage(input);
   };
 
+  const handleKeyDown = (e) => {
+    // ENTER = send, SHIFT+ENTER = newline
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(input);
+    }
+  };
+
   const active = MODES[mode];
 
   return (
     <div className="flex flex-col h-full">
       {/* Mode chips */}
       <QuickActions activeMode={mode} onPick={onPickMode} />
-
-      {/* small hint under chips */}
       <div className="text-xs text-slate-400 mb-2">{active.description}</div>
 
       {/* Messages */}
@@ -147,14 +159,17 @@ export default function ChatPanel() {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="mt-3 flex gap-2">
+      <form onSubmit={handleSubmit} className="mt-3 flex items-end gap-2">
         <textarea
-          rows={1}
-          placeholder="Ask anything… or use a Quick Action to prefill a template."
-          className="flex-1 resize-none rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+          ref={textareaRef}
+          rows={3}                                            // starts taller
+          placeholder="Shift+Enter for a new line • Enter to send"
+          className="flex-1 rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
           disabled={isSending}
+          style={{ minHeight: 64, lineHeight: "1.45" }}
         />
         <button
           type="submit"
@@ -165,10 +180,9 @@ export default function ChatPanel() {
         </button>
       </form>
 
-      {/* Tips for each mode */}
       {active.template && !messages.length && (
         <div className="mt-2 text-xs text-slate-400">
-          Tip: This mode has a template. We prefilled your input — edit it and hit Send.
+          Tip: This mode has a template. We prefilled your input — edit it and hit <kbd>Enter</kbd>.
         </div>
       )}
     </div>
