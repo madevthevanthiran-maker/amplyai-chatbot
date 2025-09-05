@@ -1,27 +1,26 @@
 // components/QuickActions.jsx
 import React from "react";
-import { MODE_LIST, MODES } from "@/lib/modes";
+import { PRESETS_BY_MODE } from "@/lib/modes";
 
-export default function QuickActions({ activeMode = "general", onPick }) {
+export default function QuickActions({ mode = "general", onInsert }) {
+  const presets = PRESETS_BY_MODE[mode] || [];
+  if (!Array.isArray(presets) || presets.length === 0) return null;
+
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
-      {MODE_LIST.map((m) => {
-        const isActive = m.id === activeMode;
-        return (
+    <div className="mb-2 -mt-1">
+      <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+        {presets.map((p, idx) => (
           <button
-            key={m.id}
+            key={idx}
             type="button"
-            onClick={() => onPick?.(MODES[m.id])}
-            className={`rounded-full border px-3 py-1.5 text-sm transition ${
-              isActive
-                ? "bg-blue-600 text-white border-blue-500"
-                : "bg-slate-800 text-slate-100 border-slate-700 hover:bg-slate-700"
-            }`}
+            className="whitespace-nowrap rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-xs text-slate-100 hover:bg-slate-700"
+            title={p.text?.slice(0, 120)}
+            onClick={() => onInsert?.(p.text ?? "")}
           >
-            {m.title}
+            {p.label}
           </button>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
