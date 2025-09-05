@@ -3,30 +3,25 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * PresetBar
- * - Renders a horizontally-scrollable row of preset buttons.
- * - Scrollbar is hidden; navigation via chevrons (and touch/trackpad).
- * - Props:
- *    - presets: Array<{label: string, text: string}>
- *    - onInsert: (text: string) => void
+ * - Horizontal row of preset buttons
+ * - Scrollbar hidden; navigation via chevrons or touchpad/drag
  */
 export default function PresetBar({ presets = [], onInsert }) {
   const trackRef = useRef(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
 
-  // Recompute chevron enabled/disabled
+  // Update chevron state
   const updateChevrons = useCallback(() => {
     const el = trackRef.current;
     if (!el) return;
     const { scrollLeft, scrollWidth, clientWidth } = el;
-
-    // Small epsilon to avoid edge jitter
-    const EPS = 2;
+    const EPS = 2; // tolerance
     setCanLeft(scrollLeft > EPS);
     setCanRight(scrollLeft + clientWidth < scrollWidth - EPS);
   }, []);
 
-  // Scroll by a chunk (75% of visible width)
+  // Scroll by ~75% width
   const scrollByChunk = useCallback((dir) => {
     const el = trackRef.current;
     if (!el) return;
@@ -34,7 +29,7 @@ export default function PresetBar({ presets = [], onInsert }) {
     el.scrollBy({ left: delta, behavior: "smooth" });
   }, []);
 
-  // Keep button states synced on scroll / resize
+  // Sync on mount + resize + scroll
   useEffect(() => {
     updateChevrons();
     const el = trackRef.current;
@@ -73,7 +68,7 @@ export default function PresetBar({ presets = [], onInsert }) {
         <ChevronLeft />
       </button>
 
-      {/* The scrolling track (scrollbar hidden via CSS class) */}
+      {/* Scrollable track */}
       <div
         ref={trackRef}
         className="mx-10 overflow-x-auto no-scrollbar"
@@ -88,9 +83,9 @@ export default function PresetBar({ presets = [], onInsert }) {
               title={p.text.slice(0, 140)}
               onClick={() => onInsert?.(p.text ?? "")}
               className={[
-                "preset-btn",              // custom class from globals.css for a consistent look
-                "hover:bg-slate-600/70",   // extra hover polish
-                "focus:outline-none focus:ring-2 focus:ring-blue-500"
+                "preset-btn",
+                "hover:bg-slate-600/70",
+                "focus:outline-none focus:ring-2 focus:ring-blue-500",
               ].join(" ")}
             >
               {p.label}
@@ -116,14 +111,13 @@ export default function PresetBar({ presets = [], onInsert }) {
         <ChevronRight />
       </button>
 
-      {/* Optional soft edge fades so users know there's more */}
+      {/* Fade edges to hint at scrollability */}
       <div className="pointer-events-none absolute left-8 top-0 h-full w-8 bg-gradient-to-r from-[#0a0a0a] to-transparent" />
       <div className="pointer-events-none absolute right-8 top-0 h-full w-8 bg-gradient-to-l from-[#0a0a0a] to-transparent" />
     </div>
   );
 }
 
-/* Simple inline SVGs so you don't need any icon deps */
 function ChevronLeft(props) {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" {...props}>
