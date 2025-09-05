@@ -25,12 +25,12 @@ body {
   scrollbar-width: none; /* Firefox */
 }
 
-/* Smooth resize handle for textarea */
-textarea {
+/* Smooth resize handle for textarea — SCOPED to chat input */
+textarea.amply-textarea {
   resize: vertical;
   overflow: hidden;
-  min-height: 48px;
-  max-height: 240px;
+  min-height: 48px;  /* ~3 rows */
+  max-height: 240px; /* ~10–12 rows; increase if desired */
   line-height: 1.5;
 }
 
@@ -52,4 +52,11 @@ button.preset-btn {
 }
 button.preset-btn:hover {
   background: #334155;
+}
+
+/* Nice keyboard focus */
+button:focus-visible,
+textarea.amply-textarea:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
