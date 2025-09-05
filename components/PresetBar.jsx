@@ -1,120 +1,152 @@
 // components/PresetBar.jsx
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
+/**
+ * PresetBar
+ * - Renders a horizontally-scrollable row of preset buttons.
+ * - Scrollbar is hidden; navigation via chevrons (and touch/trackpad).
+ * - Props:
+ *    - presets: Array<{label: string, text: string}>
+ *    - onInsert: (text: string) => void
+ */
 export default function PresetBar({ presets = [], onInsert }) {
-  if (!presets?.length) return null;
-
-  const stripRef = useRef(null);
+  const trackRef = useRef(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
 
-  const updateArrows = () => {
-    const el = stripRef.current;
+  // Recompute chevron enabled/disabled
+  const updateChevrons = useCallback(() => {
+    const el = trackRef.current;
     if (!el) return;
     const { scrollLeft, scrollWidth, clientWidth } = el;
-    setCanLeft(scrollLeft > 0);
-    setCanRight(scrollLeft + clientWidth < scrollWidth - 1);
-  };
 
-  useEffect(() => {
-    updateArrows();
-    const el = stripRef.current;
+    // Small epsilon to avoid edge jitter
+    const EPS = 2;
+    setCanLeft(scrollLeft > EPS);
+    setCanRight(scrollLeft + clientWidth < scrollWidth - EPS);
+  }, []);
+
+  // Scroll by a chunk (75% of visible width)
+  const scrollByChunk = useCallback((dir) => {
+    const el = trackRef.current;
     if (!el) return;
-    const onScroll = () => updateArrows();
-    const ro = new ResizeObserver(updateArrows);
+    const delta = Math.round(el.clientWidth * 0.75) * (dir === "left" ? -1 : 1);
+    el.scrollBy({ left: delta, behavior: "smooth" });
+  }, []);
+
+  // Keep button states synced on scroll / resize
+  useEffect(() => {
+    updateChevrons();
+    const el = trackRef.current;
+    if (!el) return;
+
+    const onScroll = () => updateChevrons();
     el.addEventListener("scroll", onScroll, { passive: true });
+
+    const ro = new ResizeObserver(updateChevrons);
     ro.observe(el);
+
     return () => {
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-  }, []);
+  }, [updateChevrons]);
 
-  const scrollByAmount = (dir = 1) => {
-    const el = stripRef.current;
-    if (!el) return;
-    const amount = Math.round(el.clientWidth * 0.75);
-    el.scrollBy({ left: dir * amount, behavior: "smooth" });
-  };
-
-  const Chevron = ({ dir = "left", disabled, onClick }) => (
-    <button
-      type="button"
-      aria-label={dir === "left" ? "Scroll left" : "Scroll right"}
-      disabled={disabled}
-      onClick={onClick}
-      className={`
-        absolute top-1/2 -translate-y-1/2 z-10
-        ${dir === "left" ? "left-0" : "right-0"}
-        h-8 w-8 rounded-full
-        bg-slate-800/80 border border-slate-600/60
-        text-slate-200
-        backdrop-blur
-        hover:bg-slate-700 disabled:opacity-30
-        flex items-center justify-center
-        shadow-sm
-      `}
-      style={{ pointerEvents: disabled ? "none" : "auto" }}
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        className={dir === "left" ? "" : "rotate-180"}
-      >
-        <path
-          d="M15 6l-6 6 6 6"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
-  );
+  if (!presets?.length) return null;
 
   return (
-    <div className="sticky top-0 z-20 pt-2 pb-1 bg-gradient-to-b from-[#0a0a0a] via-[#0a0a0a] to-transparent">
-      <div className="relative">
-        <Chevron dir="left" disabled={!canLeft} onClick={() => scrollByAmount(-1)} />
-        <Chevron dir="right" disabled={!canRight} onClick={() => scrollByAmount(1)} />
+    <div className="relative mb-3 mt-1">
+      {/* Left chevron */}
+      <button
+        type="button"
+        aria-label="Scroll presets left"
+        onClick={() => scrollByChunk("left")}
+        disabled={!canLeft}
+        className={[
+          "absolute left-0 top-1/2 -translate-y-1/2 z-10",
+          "h-8 w-8 rounded-full grid place-items-center",
+          "bg-slate-800/70 border border-slate-700 text-slate-200",
+          "hover:bg-slate-700/80 focus:outline-none focus:ring-2 focus:ring-blue-500",
+          !canLeft && "opacity-40 cursor-not-allowed",
+        ].join(" ")}
+      >
+        <ChevronLeft />
+      </button>
 
-        {/* Scrollable strip */}
-        <div
-          ref={stripRef}
-          className="
-            preset-strip
-            overflow-x-auto overflow-y-hidden
-            px-10  /* space for arrows */
-            pb-2 -mb-2
-          "
-        >
-          <div className="flex gap-2 w-max">
-            {presets.map((p, idx) => (
-              <button
-                key={idx}
-                type="button"
-                className="
-                  preset-btn
-                  min-w-max
-                  rounded-full
-                  border border-slate-600/70
-                  bg-slate-800/60
-                  px-3 py-1
-                  text-xs text-slate-100
-                  hover:bg-slate-700
-                  transition whitespace-nowrap
-                "
-                title={p.text?.slice(0, 160)}
-                onClick={() => onInsert?.(p.text ?? "")}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+      {/* The scrolling track (scrollbar hidden via CSS class) */}
+      <div
+        ref={trackRef}
+        className="mx-10 overflow-x-auto no-scrollbar"
+        role="toolbar"
+        aria-label="Quick presets"
+      >
+        <div className="flex gap-2 py-1">
+          {presets.map((p, idx) => (
+            <button
+              key={`${p.label}-${idx}`}
+              type="button"
+              title={p.text.slice(0, 140)}
+              onClick={() => onInsert?.(p.text ?? "")}
+              className={[
+                "preset-btn",              // custom class from globals.css for a consistent look
+                "hover:bg-slate-600/70",   // extra hover polish
+                "focus:outline-none focus:ring-2 focus:ring-blue-500"
+              ].join(" ")}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Right chevron */}
+      <button
+        type="button"
+        aria-label="Scroll presets right"
+        onClick={() => scrollByChunk("right")}
+        disabled={!canRight}
+        className={[
+          "absolute right-0 top-1/2 -translate-y-1/2 z-10",
+          "h-8 w-8 rounded-full grid place-items-center",
+          "bg-slate-800/70 border border-slate-700 text-slate-200",
+          "hover:bg-slate-700/80 focus:outline-none focus:ring-2 focus:ring-blue-500",
+          !canRight && "opacity-40 cursor-not-allowed",
+        ].join(" ")}
+      >
+        <ChevronRight />
+      </button>
+
+      {/* Optional soft edge fades so users know there's more */}
+      <div className="pointer-events-none absolute left-8 top-0 h-full w-8 bg-gradient-to-r from-[#0a0a0a] to-transparent" />
+      <div className="pointer-events-none absolute right-8 top-0 h-full w-8 bg-gradient-to-l from-[#0a0a0a] to-transparent" />
     </div>
+  );
+}
+
+/* Simple inline SVGs so you don't need any icon deps */
+function ChevronLeft(props) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" {...props}>
+      <path
+        d="M15 6l-6 6 6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+function ChevronRight(props) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" {...props}>
+      <path
+        d="M9 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
