@@ -9,48 +9,44 @@ export default async function handler(req, res) {
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      // Make the problem obvious in the UI
       return res.status(500).json({
         error:
-          "OPENAI_API_KEY is missing. Set it in Vercel -> Project -> Settings -> Environment Variables.",
+          "OPENAI_API_KEY is missing. Set it in Vercel → Project → Settings → Environment Variables, then redeploy.",
       });
     }
 
     const { messages = [], mode = "general" } = req.body || {};
-
-    // Basic validation
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "No messages provided." });
     }
 
-    const systemByMode = {
+    const SYSTEM = {
       general:
-        "Be concise, helpful, and structured. Add sources when useful. Use bullets for clarity.",
+        "Be concise, helpful, and structured. When useful, add short sources or links. Use bullets for clarity.",
       mailmate:
-        "Write crisp, outcome-driven emails. Include subject options when asked. Keep a friendly, confident tone.",
+        "Write crisp, outcome-driven emails with a friendly, confident tone. Include subject options if asked.",
       hirehelper:
-        "Turn notes into recruiter-ready bullets (STAR, quantified). Optimize for clarity and impact.",
+        "Turn notes into recruiter-ready bullets using STAR (Situation/Task, Action, Result). Quantify impact.",
       planner:
-        "Break goals into doable tasks, add time estimates, buffers, and a schedule. Be realistic.",
+        "Break goals into doable tasks with realistic time estimates, buffers, and a weekly schedule. Note risks & mitigations.",
     };
 
     const client = new OpenAI({ apiKey });
 
-    const completion = await client.chat.completions.create({
+    const resp = await client.chat.completions.create({
       model: "gpt-4o-mini",
+      temperature: 0.4,
       messages: [
-        { role: "system", content: systemByMode[mode] || systemByMode.general },
-        // only include role/content
+        { role: "system", content: SYSTEM[mode] || SYSTEM.general },
         ...messages.map((m) => ({ role: m.role, content: m.content })),
       ],
-      temperature: 0.4,
     });
 
-    const text =
-      completion?.choices?.[0]?.message?.content?.trim() || "(No response)";
+    const text = resp?.choices?.[0]?.message?.content?.trim() || "(No response)";
     return res.status(200).json({ text });
   } catch (err) {
-    console.error("API /api/chat error:", err);
-    return res.status(500).json({ error: err?.message || "Unknown error" });
+    console.error("/api/chat error:", err);
+    const msg = err?.response?.data?.error?.message || err?.message || "Unknown error";
+    return res.status(500).json({ error: msg });
   }
 }
