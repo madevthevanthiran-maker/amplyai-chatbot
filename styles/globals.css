@@ -16,21 +16,12 @@ body {
   color: #f3f4f6;
 }
 
-/* Hide scrollbars for preset bar */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
-}
-
-/* Smooth resize handle for textarea — SCOPED to chat input */
-textarea.amply-textarea {
+/* Smooth resize handle for textarea */
+textarea {
   resize: vertical;
   overflow: hidden;
-  min-height: 48px;  /* ~3 rows */
-  max-height: 240px; /* ~10–12 rows; increase if desired */
+  min-height: 48px;
+  max-height: 240px;
   line-height: 1.5;
 }
 
@@ -54,9 +45,25 @@ button.preset-btn:hover {
   background: #334155;
 }
 
-/* Nice keyboard focus */
-button:focus-visible,
-textarea.amply-textarea:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
+/* --- Preset strip with a visible bottom scrollbar --- */
+.preset-strip {
+  /* Keep space for horizontal scrollbar so chips aren't clipped */
+  scrollbar-gutter: stable both-edges;
+  scroll-behavior: smooth;
+}
+
+/* WebKit scrollbar styling (Chrome/Edge/Safari) */
+.preset-strip::-webkit-scrollbar {
+  height: 8px;
+}
+.preset-strip::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6); /* slate-900-ish */
+  border-radius: 8px;
+}
+.preset-strip::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.9); /* slate-600-ish */
+  border-radius: 8px;
+}
+.preset-strip::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 1); /* slate-500-ish */
 }
