@@ -3,23 +3,29 @@
 @tailwind components;
 @tailwind utilities;
 
-/* your dark-theme basics below… */
+/* full height for app */
 html,
 body,
 #__next {
   height: 100%;
 }
+
 html,
 body {
   background-color: #0a0a0a;
   color: #f3f4f6;
 }
 
-/* Hide horizontal scrollbars (used by PresetBar track) */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+/* Hide horizontal scrollbars (for PresetBar track) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
-/* Smooth resize handle for textarea (if you use it) */
+/* Smooth resize for textarea */
 textarea {
   resize: vertical;
   overflow: hidden;
@@ -29,18 +35,24 @@ textarea {
 }
 
 /* Selection highlight */
-::selection { background: rgba(37, 99, 235, 0.35); }
+::selection {
+  background: rgba(37, 99, 235, 0.35);
+}
 
-/* Unified chip style for preset buttons */
+/* Preset button style */
 button.preset-btn {
   white-space: nowrap;
   border-radius: 9999px;
   border: 1px solid #334155;
   background: rgba(30, 41, 59, 0.6);
   padding: 0.25rem 0.75rem; /* py-1 px-3 */
-  font-size: 0.75rem;       /* text-xs */
+  font-size: 0.75rem; /* text-xs */
   color: #f1f5f9;
   transition: background 0.2s ease, transform 0.1s ease;
 }
-button.preset-btn:hover { background: #334155; }
-button.preset-btn:active { transform: translateY(1px); }
+button.preset-btn:hover {
+  background: #334155;
+}
+button.preset-btn:active {
+  transform: translateY(1px);
+}
