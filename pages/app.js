@@ -1,13 +1,12 @@
 // pages/app.js
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import ModeTabs from "@/components/ModeTabs";
 import PresetBar from "@/components/PresetBar";
-import { PRESETS_BY_MODE } from "@/lib/presets";
-import { MODE_LIST } from "@/lib/modes";
+import { PRESETS_BY_MODE } from "@/lib/modes";
 
 export default function AppPage() {
-  const [mode, setMode] = useState("general"); // "general" | "mailmate" | "hirehelper" | "planner"
+  const [mode, setMode] = useState("general");
   const [history, setHistory] = useState({
     general: [],
     mailmate: [],
@@ -20,10 +19,7 @@ export default function AppPage() {
     if (typeof window === "undefined") return;
     try {
       const raw = localStorage.getItem("amplyai_history_v1");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setHistory((prev) => ({ ...prev, ...parsed }));
-      }
+      if (raw) setHistory((prev) => ({ ...prev, ...JSON.parse(raw) }));
     } catch {}
   }, []);
 
@@ -36,31 +32,30 @@ export default function AppPage() {
   }, [history]);
 
   const currentMessages = history[mode] || [];
-
   const setCurrentMessages = (fnOrArr) => {
     setHistory((prev) => {
-      const nextTabMessages =
+      const next =
         typeof fnOrArr === "function" ? fnOrArr(prev[mode] || []) : fnOrArr;
-      return { ...prev, [mode]: nextTabMessages };
+      return { ...prev, [mode]: next };
     });
   };
 
   const handleSend = async (content) => {
-    // 1) add user message
+    // add user
     setCurrentMessages((prev) => [...prev, { role: "user", content }]);
 
     try {
-      // 2) call API with full conversation
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, messages: [...currentMessages, { role: "user", content }] }),
+        body: JSON.stringify({
+          mode,
+          messages: [...currentMessages, { role: "user", content }],
+        }),
       });
-
       const data = await res.json();
 
       if (!res.ok) {
-        // show error bubble
         setCurrentMessages((prev) => [
           ...prev,
           { role: "assistant", content: `⚠️ ${data?.error || "Request failed."}` },
@@ -68,7 +63,6 @@ export default function AppPage() {
         return;
       }
 
-      // 3) add assistant message
       setCurrentMessages((prev) => [
         ...prev,
         { role: "assistant", content: data.text || "(No response)" },
@@ -82,7 +76,7 @@ export default function AppPage() {
   };
 
   const handlePresetInsert = (text) => {
-    // Insert preset text into the input box via a custom event the ChatPanel listens to
+    // Tell the ChatPanel to insert this text into the textarea
     window.dispatchEvent(new CustomEvent("amplyai.insertPreset", { detail: text }));
   };
 
@@ -94,11 +88,7 @@ export default function AppPage() {
           <PresetBar presets={PRESETS_BY_MODE[mode]} onInsert={handlePresetInsert} />
         </div>
         <div className="mt-3">
-          <ChatPanel
-            mode={mode}
-            messages={currentMessages}
-            onSend={handleSend}
-          />
+          <ChatPanel mode={mode} messages={currentMessages} onSend={handleSend} />
         </div>
       </div>
     </div>
