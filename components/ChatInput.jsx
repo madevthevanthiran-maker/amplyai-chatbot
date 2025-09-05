@@ -1,49 +1,54 @@
 // components/ChatInput.jsx
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 export default function ChatInput({
-  value,
-  onChange,
+  placeholder = "Ask anything… (Enter to send, Shift+Enter for new line)",
   onSend,
-  placeholder = "Ask anything… (Shift+Enter for newline, Enter to send)",
-  disabled = false,
+  minRows = 1,
+  maxRows = 12,
 }) {
+  const [value, setValue] = useState("");
   const ref = useRef(null);
 
-  // Auto-grow textarea up to CSS max-height
+  // auto-grow between minRows and maxRows
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
+    const lineHeight = parseInt(window.getComputedStyle(el).lineHeight, 10) || 20;
+    const rows = Math.min(maxRows, Math.max(minRows, Math.ceil(el.scrollHeight / lineHeight)));
+    el.style.height = `${rows * lineHeight}px`;
+  }, [value, minRows, maxRows]);
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      if (e.shiftKey) return; // allow newline
+  const send = () => {
+    const text = value.trim();
+    if (!text) return;
+    onSend?.(text);
+    setValue("");
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!disabled && onSend) onSend();
+      send();
     }
   };
 
   return (
-    <div className="flex items-end gap-2 rounded-xl border border-slate-700/60 bg-slate-900/60 p-2">
+    <div className="flex items-end gap-2 rounded-xl border border-slate-700 bg-slate-900 p-2">
       <textarea
         ref={ref}
-        value={value}
-        disabled={disabled}
+        className="min-h-[36px] w-full resize-none bg-transparent px-2 py-2 outline-none"
         placeholder={placeholder}
-        onChange={(e) => onChange?.(e.target.value)}
-        onKeyDown={handleKeyDown}
-        className="min-h-[48px] max-h-60 w-full resize-y bg-transparent px-3 py-2 text-slate-100 placeholder:text-slate-400 focus:outline-none"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={onKeyDown}
+        rows={minRows}
       />
       <button
         type="button"
-        onClick={() => !disabled && onSend?.()}
-        disabled={disabled || !value?.trim()}
-        className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-blue-500"
-        aria-label="Send"
-        title="Send (Enter)"
+        className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-500"
+        onClick={send}
       >
         Send
       </button>
