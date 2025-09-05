@@ -5,35 +5,40 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
  * PresetBar
  * - Horizontal row of preset buttons
  * - Scrollbar hidden; navigation via chevrons or touchpad/drag
+ * - Arrow keys work when the bar is focused
  */
 export default function PresetBar({ presets = [], onInsert }) {
   const trackRef = useRef(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
 
-  // Update chevron state
   const updateChevrons = useCallback(() => {
     const el = trackRef.current;
     if (!el) return;
     const { scrollLeft, scrollWidth, clientWidth } = el;
-    const EPS = 2; // tolerance
+    const EPS = 2;
     setCanLeft(scrollLeft > EPS);
     setCanRight(scrollLeft + clientWidth < scrollWidth - EPS);
   }, []);
 
-  // Scroll by ~75% width
   const scrollByChunk = useCallback((dir) => {
     const el = trackRef.current;
     if (!el) return;
-    const delta = Math.round(el.clientWidth * 0.75) * (dir === "left" ? -1 : 1);
-    el.scrollBy({ left: delta, behavior: "smooth" });
-  }, []);
+    // Guard: if we can't scroll that direction, bail
+    if (dir === "left" && !canLeft) return;
+    if (dir === "right" && !canRight) return;
 
-  // Sync on mount + resize + scroll
+    const delta =
+      Math.round(el.clientWidth * 0.75) * (dir === "left" ? -1 : 1);
+    el.scrollBy({ left: delta, behavior: "smooth" });
+  }, [canLeft, canRight]);
+
   useEffect(() => {
-    updateChevrons();
+    // Give layout a tick so measurements are correct
+    const id = requestAnimationFrame(updateChevrons);
+
     const el = trackRef.current;
-    if (!el) return;
+    if (!el) return () => cancelAnimationFrame(id);
 
     const onScroll = () => updateChevrons();
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -42,10 +47,22 @@ export default function PresetBar({ presets = [], onInsert }) {
     ro.observe(el);
 
     return () => {
+      cancelAnimationFrame(id);
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
   }, [updateChevrons]);
+
+  // Arrow keys to scroll when the bar is focused
+  const onKeyDown = (e) => {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      scrollByChunk("left");
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      scrollByChunk("right");
+    }
+  };
 
   if (!presets?.length) return null;
 
@@ -56,9 +73,10 @@ export default function PresetBar({ presets = [], onInsert }) {
         type="button"
         aria-label="Scroll presets left"
         onClick={() => scrollByChunk("left")}
-        disabled={!canLeft}
+        // not using disabled prop; we only style the state
         className={[
-          "absolute left-0 top-1/2 -translate-y-1/2 z-10",
+          "absolute left-0 top-1/2 -translate-y-1/2",
+          "z-30 pointer-events-auto", // make sure it sits on top & clickable
           "h-8 w-8 rounded-full grid place-items-center",
           "bg-slate-800/70 border border-slate-700 text-slate-200",
           "hover:bg-slate-700/80 focus:outline-none focus:ring-2 focus:ring-blue-500",
@@ -71,7 +89,9 @@ export default function PresetBar({ presets = [], onInsert }) {
       {/* Scrollable track */}
       <div
         ref={trackRef}
-        className="mx-10 overflow-x-auto no-scrollbar"
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        className="mx-10 overflow-x-auto no-scrollbar focus:outline-none"
         role="toolbar"
         aria-label="Quick presets"
       >
@@ -99,9 +119,9 @@ export default function PresetBar({ presets = [], onInsert }) {
         type="button"
         aria-label="Scroll presets right"
         onClick={() => scrollByChunk("right")}
-        disabled={!canRight}
         className={[
-          "absolute right-0 top-1/2 -translate-y-1/2 z-10",
+          "absolute right-0 top-1/2 -translate-y-1/2",
+          "z-30 pointer-events-auto",
           "h-8 w-8 rounded-full grid place-items-center",
           "bg-slate-800/70 border border-slate-700 text-slate-200",
           "hover:bg-slate-700/80 focus:outline-none focus:ring-2 focus:ring-blue-500",
@@ -111,9 +131,9 @@ export default function PresetBar({ presets = [], onInsert }) {
         <ChevronRight />
       </button>
 
-      {/* Fade edges to hint at scrollability */}
-      <div className="pointer-events-none absolute left-8 top-0 h-full w-8 bg-gradient-to-r from-[#0a0a0a] to-transparent" />
-      <div className="pointer-events-none absolute right-8 top-0 h-full w-8 bg-gradient-to-l from-[#0a0a0a] to-transparent" />
+      {/* Fade edges (won't block clicks) */}
+      <div className="pointer-events-none absolute left-8 top-0 h-full w-8 bg-gradient-to-r from-[#0a0a0a] to-transparent z-20" />
+      <div className="pointer-events-none absolute right-8 top-0 h-full w-8 bg-gradient-to-l from-[#0a0a0a] to-transparent z-20" />
     </div>
   );
 }
