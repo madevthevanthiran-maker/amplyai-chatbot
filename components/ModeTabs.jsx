@@ -1,15 +1,10 @@
 // components/ModeTabs.jsx
-export default function ModeTabs({ mode, setMode }) {
-  const tabs = [
-    { id: "general", label: "Chat (general)" },
-    { id: "mailmate", label: "MailMate (email)" },
-    { id: "hirehelper", label: "HireHelper (resume)" },
-    { id: "planner", label: "Planner (study/work)" },
-  ];
+import { MODE_LIST } from "@/lib/modes";
 
+export default function ModeTabs({ mode, setMode }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {tabs.map((t) => (
+      {MODE_LIST.map((t) => (
         <button
           key={t.id}
           onClick={() => setMode(t.id)}
