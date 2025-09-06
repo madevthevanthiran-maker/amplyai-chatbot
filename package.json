@@ -10,6 +10,9 @@
   },
   "dependencies": {
     "autoprefixer": "^10.4.20",
+    "cookie": "^1.0.2",
+    "googleapis": "^159.0.0",
+    "jsonwebtoken": "^9.0.2",
     "next": "14.2.3",
     "openai": "^4.0.0",
     "pdf-lib": "^1.17.1",
