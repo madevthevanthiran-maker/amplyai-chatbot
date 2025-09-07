@@ -1,5 +1,4 @@
 // /pages/api/google/calendar/create.js
-
 import {
   ensureFreshTokens,
   readTokensFromReq,
@@ -13,50 +12,51 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ensure we have tokens (and refresh if needed)
+    // Ensure/refresh tokens
     let tokens = await ensureFreshTokens(req, res);
     if (!tokens) tokens = readTokensFromReq(req);
 
     if (!tokens) {
-      // Not connected → tell the client where to start OAuth
+      // Not connected → let client redirect
       return res.status(401).json({
         error: "Google not connected",
-        authUrl: getAuthUrl("/settings"), // or wherever you want to return after connect
+        authUrl: getAuthUrl("/settings"),
       });
     }
 
     const { title, description, start, end, timezone, location, attendees } =
       req.body || {};
 
+    // Validate inputs early and explicitly
     if (!title || !start || !end) {
       return res.status(400).json({
         error: "Missing required fields: title, start, end",
+        received: { title, start, end },
       });
     }
 
+    // Build Calendar client and event
     const calendar = clientWithTokens(tokens);
-
     const event = {
       summary: title,
       description: description || "",
       location: location || undefined,
       start: {
-        dateTime: start, // ISO string, e.g. "2025-09-07T10:00:00"
+        dateTime: start, // "YYYY-MM-DDTHH:mm:ss"
         timeZone: timezone || "UTC",
       },
       end: {
-        dateTime: end, // ISO string
+        dateTime: end,
         timeZone: timezone || "UTC",
       },
       attendees:
         Array.isArray(attendees) && attendees.length
           ? attendees.map((email) => ({ email }))
           : undefined,
-      reminders: {
-        useDefault: true,
-      },
+      reminders: { useDefault: true },
     };
 
+    // Insert event
     const { data } = await calendar.events.insert({
       calendarId: "primary",
       requestBody: event,
@@ -68,7 +68,18 @@ export default async function handler(req, res) {
       status: data.status,
     });
   } catch (err) {
-    console.error("Calendar create error:", err?.response?.data || err);
-    return res.status(500).json({ error: "Failed to create event" });
+    // Log for Vercel
+    console.error("Calendar create error:", {
+      message: err?.message,
+      code: err?.code,
+      response: err?.response?.data,
+    });
+
+    // Return diagnostic info to the client (safe subset)
+    return res.status(500).json({
+      error: err?.response?.data?.error?.message ||
+             err?.message ||
+             "Failed to create event",
+    });
   }
 }
