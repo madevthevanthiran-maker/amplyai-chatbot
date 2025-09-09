@@ -5,34 +5,41 @@
 //   block 2pm-3:30pm today for sprint
 //   block 2025-09-08 09:00-11:00 for Something
 //
-// Times accepted: "9", "9am", "9:30", "9:30pm", "21:00", "9-11", "9:00-11:15"
+// Times accepted: "9", "9am", "9:30", "9:30pm", "21:00", "9-11", "9:00-11:15", and tolerant "13:00pm"
 
 function parseTimePiece(piece) {
   // returns minutes since midnight or null
-  const s = piece.trim().toLowerCase();
+  let s = String(piece || "").trim().toLowerCase();
 
-  // 24h HH:MM
-  let m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
-  if (m && !s.endsWith("am") && !s.endsWith("pm")) {
-    let h = parseInt(m[1], 10);
-    let min = m[2] ? parseInt(m[2], 10) : 0;
-    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) return h * 60 + min;
+  // Detect optional meridiem, but tolerate 24h + meridiem (e.g. "13:00pm")
+  const merMatch = s.match(/(am|pm)$/);
+  let mer = merMatch ? merMatch[1] : null;
+
+  // Strip meridiem (we'll apply it later if appropriate)
+  if (mer) s = s.slice(0, -mer.length);
+
+  // 24h HH[:MM] or bare H/H:MM
+  const m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (!m) return null;
+
+  let h = parseInt(m[1], 10);
+  let min = m[2] ? parseInt(m[2], 10) : 0;
+  if (Number.isNaN(h) || Number.isNaN(min) || h < 0 || h > 23 || min < 0 || min > 59) {
+    return null;
   }
 
-  // 12h like "9am", "9:30pm"
-  m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
-  if (m) {
-    let h = parseInt(m[1], 10);
-    let min = m[2] ? parseInt(m[2], 10) : 0;
-    const ap = m[3];
-    if (h >= 1 && h <= 12 && min >= 0 && min <= 59) {
-      if (ap === "pm" && h !== 12) h += 12;
-      if (ap === "am" && h === 12) h = 0;
-      return h * 60 + min;
-    }
+  // If hour > 12, ignore any stray am/pm and keep 24-hour
+  if (h > 12) {
+    mer = null;
   }
 
-  return null;
+  // Apply 12-hour rules only when hour ≤ 12 and meridiem is present
+  if (mer && h <= 12) {
+    if (mer === "pm" && h !== 12) h += 12;
+    if (mer === "am" && h === 12) h = 0;
+  }
+
+  return h * 60 + min;
 }
 
 function minutesToDate(baseDate, minutes) {
@@ -61,6 +68,17 @@ function parseDateToken(token) {
   const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
   if (isNaN(d.getTime())) return null;
   return d;
+}
+
+// Format a Date as local "YYYY-MM-DDTHH:mm:ss" (no UTC conversion)
+function formatLocalISO(date) {
+  const y = date.getFullYear();
+  const M = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${y}-${M}-${d}T${h}:${m}:${s}`;
 }
 
 export function parseFocusText(input, defaultTz) {
@@ -117,9 +135,9 @@ export function parseFocusText(input, defaultTz) {
   const startDate = minutesToDate(baseDate, startMin);
   const endDate = minutesToDate(baseDate, endMin);
 
-  // ISO w/o timezone seconds fraction (our API expects "YYYY-MM-DDTHH:mm:ss")
-  const startISO = new Date(startDate.getTime() - startDate.getMilliseconds()).toISOString().slice(0,19);
-  const endISO = new Date(endDate.getTime() - endDate.getMilliseconds()).toISOString().slice(0,19);
+  // Local ISO (no UTC shift)
+  const startISO = formatLocalISO(startDate);
+  const endISO = formatLocalISO(endDate);
 
   return {
     ok: true,
