@@ -1,4 +1,3 @@
-// /pages/api/google/calendar/create.js
 import {
   ensureFreshTokens,
   readTokensFromReq,
@@ -17,14 +16,13 @@ export default async function handler(req, res) {
     if (!tokens) tokens = readTokensFromReq(req);
 
     if (!tokens) {
-      // Not connected → let client redirect
       return res.status(401).json({
         error: "Google not connected",
         authUrl: getAuthUrl("/settings"),
       });
     }
 
-    const { title, description, start, end, timezone, location, attendees, rrule } =
+    const { title, description, start, end, timezone, location, attendees } =
       req.body || {};
 
     if (!title || !start || !end) {
@@ -34,20 +32,18 @@ export default async function handler(req, res) {
       });
     }
 
-    // Build Calendar client and event
+    // Build Calendar client
     const calendar = clientWithTokens(tokens);
+    if (!calendar) {
+      return res.status(500).json({ error: "Failed to initialize calendar client" });
+    }
+
     const event = {
       summary: title,
       description: description || "",
       location: location || undefined,
-      start: {
-        dateTime: start, // "YYYY-MM-DDTHH:mm:ss"
-        timeZone: timezone || "UTC",
-      },
-      end: {
-        dateTime: end,
-        timeZone: timezone || "UTC",
-      },
+      start: { dateTime: start, timeZone: timezone || "UTC" },
+      end: { dateTime: end, timeZone: timezone || "UTC" },
       attendees:
         Array.isArray(attendees) && attendees.length
           ? attendees.map((email) => ({ email }))
@@ -55,12 +51,6 @@ export default async function handler(req, res) {
       reminders: { useDefault: true },
     };
 
-    // Add RRULE for recurrence if provided, e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
-    if (rrule && typeof rrule === "string" && rrule.toUpperCase().startsWith("FREQ=")) {
-      event.recurrence = [`RRULE:${rrule}`];
-    }
-
-    // Insert event
     const { data } = await calendar.events.insert({
       calendarId: "primary",
       requestBody: event,
@@ -70,7 +60,6 @@ export default async function handler(req, res) {
       id: data.id,
       htmlLink: data.htmlLink,
       status: data.status,
-      recurrence: data.recurrence || null,
     });
   } catch (err) {
     console.error("Calendar create error:", {
