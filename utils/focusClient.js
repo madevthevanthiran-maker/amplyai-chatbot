@@ -1,6 +1,7 @@
 // /utils/focusClient.js
 import { parseFocusText } from "./parseFocus";
 
+// read response safely (even when not JSON)
 async function readResponse(res) {
   const text = await res.text();
   try { return { json: JSON.parse(text), raw: text }; }
@@ -11,102 +12,82 @@ export async function tryHandleFocusCommand(rawText) {
   if (!/^block\s/i.test(rawText || "")) return { handled: false };
 
   const parsed = parseFocusText(rawText);
-  if (!parsed.ok) return { handled: true, ok: false, message: parsed.error };
+  if (!parsed.ok) {
+    return { handled: true, ok: false, message: parsed.error };
+  }
 
   const evt = parsed.data;
 
-  // Attempt create
-  let res = await fetch("/api/google/calendar/create", {
+  // 1) Conflict check
+  let conflictNote = "";
+  try {
+    const r = await fetch("/api/google/calendar/freebusy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startISO: evt.startISO,
+        endISO: evt.endISO,
+        timezone: evt.timezone,
+      }),
+    });
+
+    if (r.status === 401) {
+      // Not connected yet → server will own the redirect
+      const { json } = await readResponse(r);
+      if (json?.authUrl) {
+        window.location.href = json.authUrl;
+        return { handled: true, ok: false, message: "Redirecting to connect Google…" };
+      }
+      return { handled: true, ok: false, message: "Google not connected" };
+    }
+
+    const { json } = await readResponse(r);
+    if (r.ok && Array.isArray(json?.conflicts) && json.conflicts.length > 0) {
+      const first = json.conflicts[0];
+      const names =
+        json.conflicts
+          .slice(0, 3)
+          .map((x) => x.summary)
+          .join(", ") + (json.conflicts.length > 3 ? "…" : "");
+      conflictNote = ` ⚠️ Overlaps with ${names}`;
+      // (Optional) You could early-return here to ask the user to confirm.
+    }
+  } catch {
+    // silent: conflict check failing shouldn't block creation
+  }
+
+  // 2) Create the event
+  const res = await fetch("/api/google/calendar/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       title: evt.title,
       description: "Created via chat Focus command",
-      start: evt.startISO,
+      start: evt.startISO,     // "YYYY-MM-DDTHH:mm:ss"
       end: evt.endISO,
-      timezone: evt.timezone,
+      timezone: evt.timezone,  // e.g., "Australia/Melbourne"
       location: "Focus",
     }),
   });
 
-  // Not connected → redirect
   if (res.status === 401) {
     const { json } = await readResponse(res);
-    const url = json?.authUrl || "/api/google/oauth/start?state=/settings";
-    window.location.href = url;
-    return { handled: true, ok: false, message: "Redirecting to connect Google…" };
-  }
-
-  // Conflict → ask user whether to create anyway or use suggestion
-  if (res.status === 409) {
-    const { json } = await readResponse(res);
-    const sug = json?.suggested;
-    let proceed = false;
-
-    if (sug?.start && sug?.end) {
-      proceed = window.confirm(
-        `That slot is busy.\nSuggested next free slot:\n${sug.start} → ${sug.end}\n\nOK = use suggested time\nCancel = create anyway at your original time`
-      );
-      if (proceed) {
-        // Try suggested
-        res = await fetch("/api/google/calendar/create", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: evt.title,
-            description: "Created via chat Focus command (suggested slot)",
-            start: sug.start,
-            end: sug.end,
-            timezone: evt.timezone,
-            location: "Focus",
-          }),
-        });
-      } else {
-        // Create anyway with override
-        res = await fetch("/api/google/calendar/create", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: evt.title,
-            description: "Created via chat Focus command (override conflicts)",
-            start: evt.startISO,
-            end: evt.endISO,
-            timezone: evt.timezone,
-            location: "Focus",
-            allowConflicts: true,
-          }),
-        });
-      }
-    } else {
-      // No suggestion provided; ask to override
-      const override = window.confirm("That time is busy. Create anyway?");
-      if (override) {
-        res = await fetch("/api/google/calendar/create", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: evt.title,
-            description: "Created via chat Focus command (override conflicts)",
-            start: evt.startISO,
-            end: evt.endISO,
-            timezone: evt.timezone,
-            location: "Focus",
-            allowConflicts: true,
-          }),
-        });
-      } else {
-        return { handled: true, ok: false, message: "Cancelled." };
-      }
+    if (json?.authUrl) {
+      window.location.href = json.authUrl;
+      return { handled: true, ok: false, message: "Redirecting to connect Google…" };
     }
+    return { handled: true, ok: false, message: "Google not connected" };
   }
 
   const { json, raw } = await readResponse(res);
+
   if (!res.ok) {
-    return { handled: true, ok: false, message: json?.error || raw || `Server error ${res.status}` };
+    const serverMsg = json?.error || raw || `Server error ${res.status}`;
+    return { handled: true, ok: false, message: serverMsg };
   }
 
   if (json?.htmlLink) {
     try { window.open(json.htmlLink, "_blank", "noopener,noreferrer"); } catch {}
   }
-  return { handled: true, ok: true, message: "Focus block created" };
+  return { handled: true, ok: true, message: `Focus block created.${conflictNote}` };
 }
