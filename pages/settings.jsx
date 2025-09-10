@@ -12,9 +12,7 @@ export default function Settings() {
   const [status, setStatus] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // NEW: connection badge state
-  const [connected, setConnected] = useState(null); // null=loading, true/false
-
+  const [connected, setConnected] = useState(null);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -30,7 +28,7 @@ export default function Settings() {
   }, []);
 
   async function createEvent(e) {
-    e.preventDefault();
+    e?.preventDefault?.();
     setStatus("");
     setCreating(true);
 
@@ -38,7 +36,7 @@ export default function Settings() {
       const startISO = new Date(`${date}T${startTime}:00`).toISOString().slice(0, 19);
       const endISO   = new Date(`${date}T${endTime}:00`).toISOString().slice(0, 19);
 
-      const res = await fetch("/api/google/calendar/create", {
+      let res = await fetch("/api/google/calendar/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -58,6 +56,67 @@ export default function Settings() {
         return;
       }
 
+      // Handle conflict
+      if (res.status === 409) {
+        const j = await res.json().catch(() => ({}));
+        const sug = j?.suggested;
+
+        if (sug?.start && sug?.end) {
+          const useSuggested = window.confirm(
+            `That slot is busy.\nSuggested next free slot:\n${sug.start} → ${sug.end}\n\nOK = use suggested time\nCancel = create anyway at your original time`
+          );
+          if (useSuggested) {
+            res = await fetch("/api/google/calendar/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title,
+                description: "Created from Settings (suggested slot)",
+                start: sug.start,
+                end: sug.end,
+                timezone,
+                location,
+              }),
+            });
+          } else {
+            res = await fetch("/api/google/calendar/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title,
+                description: "Created from Settings (override conflicts)",
+                start: startISO,
+                end: endISO,
+                timezone,
+                location,
+                allowConflicts: true,
+              }),
+            });
+          }
+        } else {
+          const override = window.confirm("That time is busy. Create anyway?");
+          if (override) {
+            res = await fetch("/api/google/calendar/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title,
+                description: "Created from Settings (override conflicts)",
+                start: startISO,
+                end: endISO,
+                timezone,
+                location,
+                allowConflicts: true,
+              }),
+            });
+          } else {
+            setStatus("✖ Cancelled.");
+            setCreating(false);
+            return;
+          }
+        }
+      }
+
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error || "Failed to create event");
@@ -65,9 +124,7 @@ export default function Settings() {
 
       const data = await res.json();
       setStatus(`✔ Event created.${data.htmlLink ? " Opening in a new tab…" : ""}`);
-      if (data.htmlLink) {
-        window.open(data.htmlLink, "_blank", "noopener,noreferrer");
-      }
+      if (data.htmlLink) window.open(data.htmlLink, "_blank", "noopener,noreferrer");
     } catch (err) {
       setStatus(`✖ ${err.message}`);
     } finally {
@@ -78,11 +135,9 @@ export default function Settings() {
   return (
     <div className="min-h-screen bg-[#0b1220] text-slate-100">
       <div className="max-w-3xl mx-auto px-6 py-10">
-        {/* Header with Back button + status badge */}
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold">Settings</h1>
           <div className="flex items-center gap-3">
-            {/* Connection badge */}
             <span
               className={[
                 "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm border",
@@ -110,50 +165,34 @@ export default function Settings() {
                     : "bg-amber-400",
                 ].join(" ")}
               />
-              {connected == null
-                ? "Checking…"
-                : connected
-                ? "Google connected"
-                : "Not connected"}
+              {connected == null ? "Checking…" : connected ? "Google connected" : "Not connected"}
             </span>
 
-            <Link
-              href="/"
-              className="rounded-xl bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
-            >
+            <Link href="/" className="rounded-xl bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600">
               ← Back to Chatbot
             </Link>
           </div>
         </div>
 
-        {/* Google Calendar Connect */}
         <div className="rounded-2xl bg-[#111827] border border-slate-800 p-6 mb-8">
           <h2 className="text-xl font-medium mb-2">Google Calendar</h2>
           <p className="text-slate-300 mb-4">
-            Connect your Google Calendar so Planner can add focus blocks,
-            deadlines, and follow-ups automatically.
+            Connect your Google Calendar so Planner can add focus blocks, deadlines, and follow-ups automatically.
           </p>
-
           <div className="flex gap-3 flex-wrap">
-            <a
-              href="/api/google/oauth/start?state=%2Fsettings"
-              className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-blue-600 hover:bg-blue-500 transition"
-            >
+            <a href="/api/google/oauth/start?state=%2Fsettings" className="rounded-xl px-4 py-2 bg-blue-600 hover:bg-blue-500">
               Connect Google Calendar
             </a>
-            <a
-              href="/api/google/oauth/logout"
-              className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-slate-700 hover:bg-slate-600 transition"
-            >
+            <a href="/api/google/oauth/logout" className="rounded-xl px-4 py-2 bg-slate-700 hover:bg-slate-600">
               Disconnect
             </a>
           </div>
         </div>
 
-        {/* Create sample event */}
         <div className="rounded-2xl bg-[#111827] border border-slate-800 p-6">
           <h2 className="text-xl font-medium mb-4">Create a sample event</h2>
           <form onSubmit={createEvent} className="grid gap-4">
+            {/* Title, date/time, timezone, location inputs (unchanged) */}
             <label className="grid gap-2">
               <span className="text-slate-300">Title</span>
               <input
@@ -163,7 +202,6 @@ export default function Settings() {
                 placeholder="Event title"
               />
             </label>
-
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <label className="grid gap-2">
                 <span className="text-slate-300">Date</span>
@@ -174,7 +212,6 @@ export default function Settings() {
                   className="bg-[#0f172a] border border-slate-700 rounded-xl px-3 py-2 outline-none focus:border-blue-500"
                 />
               </label>
-
               <label className="grid gap-2">
                 <span className="text-slate-300">Start</span>
                 <input
@@ -184,7 +221,6 @@ export default function Settings() {
                   className="bg-[#0f172a] border border-slate-700 rounded-xl px-3 py-2 outline-none focus:border-blue-500"
                 />
               </label>
-
               <label className="grid gap-2">
                 <span className="text-slate-300">End</span>
                 <input
@@ -195,7 +231,6 @@ export default function Settings() {
                 />
               </label>
             </div>
-
             <label className="grid gap-2">
               <span className="text-slate-300">Timezone (IANA)</span>
               <input
@@ -205,7 +240,6 @@ export default function Settings() {
                 placeholder="e.g., Australia/Melbourne"
               />
             </label>
-
             <label className="grid gap-2">
               <span className="text-slate-300">Location</span>
               <input
@@ -215,7 +249,6 @@ export default function Settings() {
                 placeholder="Meeting link or place"
               />
             </label>
-
             <div className="flex items-center gap-3">
               <button
                 type="submit"
