@@ -1,45 +1,38 @@
 // /utils/parseFocus.js
-// Parse "block ..." text into { title, startISO, endISO, timezone }
-// Supported forms:
+// Parse "block ..." text into { title, startISO, endISO, timezone }.
+// Examples:
 //   block 9-11 tomorrow for Deep Work
 //   block 2pm-3:30pm today for sprint
 //   block 2025-09-08 09:00-11:00 for Something
+//   block 2025-09-09 13:00 - 14:30 for Team sync
 //
-// Times accepted: "9", "9am", "9:30", "9:30pm", "21:00", "9-11", "9:00-11:15", and tolerant "13:00pm"
+// Times accepted: "9", "9am", "9:30pm", "21:00", "9-11", "9:00-11:15"
 
 function parseTimePiece(piece) {
-  // returns minutes since midnight or null
-  let s = String(piece || "").trim().toLowerCase();
+  const s = piece.trim().toLowerCase();
 
-  // Detect optional meridiem, but tolerate 24h + meridiem (e.g. "13:00pm")
-  const merMatch = s.match(/(am|pm)$/);
-  let mer = merMatch ? merMatch[1] : null;
-
-  // Strip meridiem (we'll apply it later if appropriate)
-  if (mer) s = s.slice(0, -mer.length);
-
-  // 24h HH[:MM] or bare H/H:MM
-  const m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
-  if (!m) return null;
-
-  let h = parseInt(m[1], 10);
-  let min = m[2] ? parseInt(m[2], 10) : 0;
-  if (Number.isNaN(h) || Number.isNaN(min) || h < 0 || h > 23 || min < 0 || min > 59) {
-    return null;
+  // 24h HH or HH:MM
+  let m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (m && !s.endsWith("am") && !s.endsWith("pm")) {
+    let h = parseInt(m[1], 10);
+    let min = m[2] ? parseInt(m[2], 10) : 0;
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) return h * 60 + min;
   }
 
-  // If hour > 12, ignore any stray am/pm and keep 24-hour
-  if (h > 12) {
-    mer = null;
+  // 12h like "9am", "9:30pm"
+  m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+  if (m) {
+    let h = parseInt(m[1], 10);
+    let min = m[2] ? parseInt(m[2], 10) : 0;
+    const ap = m[3];
+    if (h >= 1 && h <= 12 && min >= 0 && min <= 59) {
+      if (ap === "pm" && h !== 12) h += 12;
+      if (ap === "am" && h === 12) h = 0;
+      return h * 60 + min;
+    }
   }
 
-  // Apply 12-hour rules only when hour ≤ 12 and meridiem is present
-  if (mer && h <= 12) {
-    if (mer === "pm" && h !== 12) h += 12;
-    if (mer === "am" && h === 12) h = 0;
-  }
-
-  return h * 60 + min;
+  return null;
 }
 
 function minutesToDate(baseDate, minutes) {
@@ -51,7 +44,7 @@ function minutesToDate(baseDate, minutes) {
 
 function dateForKeyword(keyword) {
   const today = new Date();
-  today.setHours(0,0,0,0);
+  today.setHours(0, 0, 0, 0);
   const dayMs = 24 * 60 * 60 * 1000;
 
   const k = keyword.toLowerCase();
@@ -62,7 +55,6 @@ function dateForKeyword(keyword) {
 }
 
 function parseDateToken(token) {
-  // Accepts YYYY-MM-DD
   const m = token.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;
   const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
@@ -70,46 +62,41 @@ function parseDateToken(token) {
   return d;
 }
 
-// Format a Date as local "YYYY-MM-DDTHH:mm:ss" (no UTC conversion)
-function formatLocalISO(date) {
-  const y = date.getFullYear();
-  const M = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = String(date.getHours()).padStart(2, "0");
-  const m = String(date.getMinutes()).padStart(2, "0");
-  const s = String(date.getSeconds()).padStart(2, "0");
-  return `${y}-${M}-${d}T${h}:${m}:${s}`;
+// Format a Date as "YYYY-MM-DDTHH:mm:ss" (local time, no timezone/offset)
+function formatLocalISO(d) {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${da}T${hh}:${mm}:00`;
 }
 
 export function parseFocusText(input, defaultTz) {
-  if (!input || typeof input !== "string") return { ok: false, error: "Empty input" };
+  if (!input || typeof input !== "string") {
+    return { ok: false, error: "Empty input" };
+  }
 
-  const tz = defaultTz || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const tz =
+    defaultTz || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const text = input.trim();
 
-  // Must start with "block "
   if (!/^block\s/i.test(text)) {
     return { ok: false, error: 'Command should start with "block"' };
   }
 
-  // Split out "... for TITLE"
   const parts = text.replace(/^block\s+/i, "").split(/\s+for\s+/i);
-  if (parts.length < 2) return { ok: false, error: 'Add "for <title>" at the end' };
+  if (parts.length < 2) {
+    return { ok: false, error: 'Add "for <title>" at the end' };
+  }
 
   const timePart = parts[0].trim();
   const title = parts.slice(1).join(" for ").trim() || "Focus block";
 
-  // Possible forms:
-  //   "<start>-<end> <dayKeyword>"
-  //   "<date> <start>-<end>"
-  //   "<start>-<end> <date>"
-  //   "<date> <start>-<end> tz?"
   const tokens = timePart.split(/\s+/);
   let baseDate = null;
-  let startMin = null;
-  let endMin = null;
 
-  // Look for date token (YYYY-MM-DD) or day keyword
+  // Look for date keyword or explicit YYYY-MM-DD
   for (const t of tokens) {
     const dkw = dateForKeyword(t);
     if (dkw) { baseDate = dkw; break; }
@@ -118,13 +105,32 @@ export function parseFocusText(input, defaultTz) {
   }
   if (!baseDate) baseDate = dateForKeyword("today");
 
-  // Find start-end token like "9-11" or "9:00-11:15" or "2pm-3:30pm"
-  let seToken = tokens.find(t => t.includes("-"));
-  if (!seToken) return { ok: false, error: "Provide a start-end time (e.g., 9-11 or 2pm-3:30pm)" };
+  // Try to extract start/end times
+  let startRaw, endRaw;
 
-  const [startRaw, endRaw] = seToken.split("-");
-  startMin = parseTimePiece(startRaw);
-  endMin = parseTimePiece(endRaw);
+  // Case 1: a token like "13:00-14:30"
+  const seToken = tokens.find((t) => t.includes("-") && t !== "-");
+  if (seToken) {
+    [startRaw, endRaw] = seToken.split("-");
+  } else {
+    // Case 2: separated by space-dash-space → "13:00 - 14:30"
+    const dashIndex = tokens.indexOf("-");
+    if (dashIndex > 0 && dashIndex < tokens.length - 1) {
+      startRaw = tokens[dashIndex - 1];
+      endRaw = tokens[dashIndex + 1];
+    }
+  }
+
+  if (!startRaw || !endRaw) {
+    return {
+      ok: false,
+      error: "Provide a start-end time (e.g., 9-11 or 2pm-3:30pm)",
+    };
+  }
+
+  const startMin = parseTimePiece(startRaw);
+  const endMin = parseTimePiece(endRaw);
+
   if (startMin == null || endMin == null) {
     return { ok: false, error: "Could not parse the start/end time" };
   }
@@ -135,16 +141,12 @@ export function parseFocusText(input, defaultTz) {
   const startDate = minutesToDate(baseDate, startMin);
   const endDate = minutesToDate(baseDate, endMin);
 
-  // Local ISO (no UTC shift)
-  const startISO = formatLocalISO(startDate);
-  const endISO = formatLocalISO(endDate);
-
   return {
     ok: true,
     data: {
       title,
-      startISO,
-      endISO,
+      startISO: formatLocalISO(startDate),
+      endISO: formatLocalISO(endDate),
       timezone: tz,
     },
   };
