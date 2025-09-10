@@ -1,109 +1,112 @@
 // /utils/parseFocus.js
-// Self-contained parser, no external libraries.
-// Converts "block ..." into { title, startISO, endISO, timezone }.
+// Supported examples:
+//   block 2-4pm today for Deep Work
+//   block 10am-11:30am today for Project Alpha
+//   block 2025-09-11 10:00-11:30 for Team sync
+//   block 9-11 tomorrow for Sprint review
 
-function clamp2(n) {
-  return String(n).padStart(2, "0");
+function toTZISOStringLocal(date) {
+  // "YYYY-MM-DDTHH:mm:ss" in local time (no offset)
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}` +
+         `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function startOfDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
+function parseMinutes(piece) {
+  const s = piece.trim().toLowerCase();
 
-function dayKeywordToDate(keyword) {
-  const t = startOfDay(new Date());
-  const oneDay = 24 * 60 * 60 * 1000;
-  const k = String(keyword || "").toLowerCase();
-  if (k === "today") return t;
-  if (k === "tomorrow") return new Date(t.getTime() + oneDay);
-  if (k === "yesterday") return new Date(t.getTime() - oneDay);
+  // 12h: 9am, 9:30pm
+  let m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+  if (m) {
+    let h = parseInt(m[1], 10);
+    let min = m[2] ? parseInt(m[2], 10) : 0;
+    const ap = m[3];
+    if (ap === "pm" && h !== 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) return h * 60 + min;
+    return null;
+  }
+
+  // 24h: 10, 10:30, 21:05
+  m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (m && !/am|pm/.test(s)) {
+    let h = parseInt(m[1], 10);
+    let min = m[2] ? parseInt(m[2], 10) : 0;
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) return h * 60 + min;
+  }
+
   return null;
 }
 
-function parseISODate(token) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(token);
-  if (!m) return null;
-  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : startOfDay(d);
-}
+function baseDateFromToken(t) {
+  const k = t.toLowerCase();
+  const today = new Date();
+  today.setHours(0,0,0,0);
 
-function parseTimePiece(piece, ampmHint = null) {
-  const s = String(piece).trim().toLowerCase();
-  const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/.exec(s);
-  if (!m) return null;
-  let hh = parseInt(m[1], 10);
-  let mm = m[2] ? parseInt(m[2], 10) : 0;
+  if (k === "today") return new Date(today);
+  if (k === "tomorrow") return new Date(today.getTime() + 86400000);
+  if (k === "yesterday") return new Date(today.getTime() - 86400000);
 
-  const ampm = m[3] || ampmHint;
-
-  if (ampm) {
-    if (hh < 1 || hh > 12) return null;
-    if (ampm === "pm" && hh !== 12) hh += 12;
-    if (ampm === "am" && hh === 12) hh = 0;
+  const m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+    if (!isNaN(d.getTime())) return d;
   }
-  if (hh > 23 || mm > 59) return null;
-  return hh * 60 + mm;
+  return null;
 }
 
-function minutesToLocalISO(dateObj, minutesSinceMidnight) {
-  const d = new Date(dateObj);
-  d.setHours(0, 0, 0, 0);
-  d.setMinutes(minutesSinceMidnight);
-  const y = d.getFullYear();
-  const m = clamp2(d.getMonth() + 1);
-  const day = clamp2(d.getDate());
-  const hh = clamp2(d.getHours());
-  const mm = clamp2(d.getMinutes());
-  const ss = clamp2(d.getSeconds());
-  return `${y}-${m}-${day}T${hh}:${mm}:${ss}`;
-}
-
-export function parseFocusCommand(input, defaultTz) {
+export function parseFocusText(input) {
   if (!input || typeof input !== "string") {
     return { ok: false, error: "Empty input" };
   }
 
-  let txt = input.trim().replace(/^block\s+/i, "");
-  if (txt === input.trim()) {
-    return { ok: false, error: 'Command must start with "block"' };
+  const txt = input.trim();
+  if (!/^block\s/i.test(txt)) {
+    return { ok: false, error: 'Command should start with "block"' };
   }
-  txt = txt.replace(/–|—/g, "-");
 
-  const parts = txt.split(/\s+for\s+/i);
+  const pieces = txt.replace(/^block\s+/i, "");
+  const parts = pieces.split(/\s+for\s+/i);
   if (parts.length < 2) {
-    return { ok: false, error: 'Add a title using "for <title>"' };
+    return { ok: false, error: 'Add "for <title>" at the end' };
   }
-  const left = parts[0].trim();
+
+  const timePart = parts[0].trim();
   const title = parts.slice(1).join(" for ").trim() || "Focus block";
 
-  const tokens = left.split(/\s+/);
-
+  const tokens = timePart.split(/\s+/);
   let baseDate = null;
+  let seToken = null;
+
   for (const t of tokens) {
-    baseDate = dayKeywordToDate(t) || parseISODate(t) || baseDate;
-  }
-  if (!baseDate) baseDate = dayKeywordToDate("today");
-
-  const rangeToken = tokens.find((t) => t.includes("-"));
-  if (!rangeToken) {
-    return { ok: false, error: "Provide a start-end time (e.g., 10-11:30 or 2pm-4pm)" };
+    if (!baseDate) baseDate = baseDateFromToken(t);
+    if (!seToken && t.includes("-")) seToken = t;
   }
 
-  const [rawStart, rawEnd] = rangeToken.split("-");
-  if (!rawStart || !rawEnd) {
-    return { ok: false, error: "Invalid time range" };
+  if (!baseDate) baseDate = baseDateFromToken("today");
+  if (!seToken) {
+    return { ok: false, error: "Provide a start-end time (e.g., 10-11 or 2pm-3:30pm)" };
   }
 
-  const startHasAP = /(am|pm)/i.test(rawStart);
-  const endHasAP = /(am|pm)/i.test(rawEnd);
-  let apHint = null;
-  if (startHasAP && !endHasAP) apHint = /pm/i.test(rawStart) ? "pm" : "am";
-  if (!startHasAP && endHasAP) apHint = /pm/i.test(rawEnd) ? "pm" : "am";
+  let [startRaw, endRaw] = seToken.split("-");
+  if (!startRaw || !endRaw) {
+    return { ok: false, error: "Could not parse the start/end time" };
+  }
 
-  const startMin = parseTimePiece(rawStart, apHint);
-  const endMin = parseTimePiece(rawEnd, apHint);
+  // In case user typed "10:00-11:30am" (missing start am/pm) we try to inherit am/pm from end
+  const endHasAmPm = /am|pm/i.test(endRaw);
+  if (!/am|pm/i.test(startRaw) && endHasAmPm) {
+    const suffix = endRaw.toLowerCase().includes("pm") ? "pm" : "am";
+    // Only if start is within 1..12 and not already 24h like 13:00
+    if (/^\d{1,2}(:\d{2})?$/.test(startRaw)) {
+      const h = parseInt(startRaw, 10);
+      if (h >= 1 && h <= 12) startRaw = `${startRaw}${suffix}`;
+    }
+  }
+
+  const startMin = parseMinutes(startRaw);
+  const endMin = parseMinutes(endRaw);
+
   if (startMin == null || endMin == null) {
     return { ok: false, error: "Could not parse the start/end time" };
   }
@@ -111,12 +114,21 @@ export function parseFocusCommand(input, defaultTz) {
     return { ok: false, error: "End time must be after start time" };
   }
 
-  const tz = defaultTz || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const startISO = minutesToLocalISO(baseDate, startMin);
-  const endISO = minutesToLocalISO(baseDate, endMin);
+  const start = new Date(baseDate);
+  start.setHours(0,0,0,0);
+  start.setMinutes(startMin);
+
+  const end = new Date(baseDate);
+  end.setHours(0,0,0,0);
+  end.setMinutes(endMin);
 
   return {
     ok: true,
-    data: { title, startISO, endISO, timezone: tz },
+    data: {
+      title,
+      startISO: toTZISOStringLocal(start), // "YYYY-MM-DDTHH:mm:ss" (local wall time)
+      endISO:   toTZISOStringLocal(end),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    }
   };
 }
