@@ -1,4 +1,5 @@
 // /pages/settings.jsx
+import Link from "next/link";
 import { useState } from "react";
 
 export default function Settings() {
@@ -17,13 +18,9 @@ export default function Settings() {
     setCreating(true);
 
     try {
-      // Compose ISO strings from date + time (ensure seconds because API expects them)
-      const startISO = new Date(`${date}T${startTime}:00`)
-        .toISOString()
-        .slice(0, 19);
-      const endISO = new Date(`${date}T${endTime}:00`)
-        .toISOString()
-        .slice(0, 19);
+      // Compose ISO strings (with seconds) for the API
+      const startISO = new Date(`${date}T${startTime}:00`).toISOString().slice(0, 19);
+      const endISO   = new Date(`${date}T${endTime}:00`).toISOString().slice(0, 19);
 
       const res = await fetch("/api/google/calendar/create", {
         method: "POST",
@@ -41,8 +38,7 @@ export default function Settings() {
       // Not connected → server returns the exact authUrl; follow it
       if (res.status === 401) {
         const j = await res.json().catch(() => ({}));
-        const url =
-          (j && j.authUrl) || "/api/google/oauth/start?state=%2Fsettings";
+        const url = j?.authUrl || "/api/google/oauth/start?state=%2Fsettings";
         window.location.href = url;
         return;
       }
@@ -53,9 +49,7 @@ export default function Settings() {
       }
 
       const data = await res.json();
-      setStatus(
-        `✔ Event created.${data.htmlLink ? " Opening in a new tab…" : ""}`
-      );
+      setStatus(`✔ Event created.${data.htmlLink ? " Opening in a new tab…" : ""}`);
       if (data.htmlLink) {
         window.open(data.htmlLink, "_blank", "noopener,noreferrer");
       }
@@ -69,18 +63,27 @@ export default function Settings() {
   return (
     <div className="min-h-screen bg-[#0b1220] text-slate-100">
       <div className="max-w-3xl mx-auto px-6 py-10">
-        <h1 className="text-3xl font-semibold mb-6">Settings</h1>
+        {/* Header with Back button */}
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-3xl font-semibold">Settings</h1>
+          <Link
+            href="/"
+            className="rounded-xl bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
+          >
+            ← Back to Chatbot
+          </Link>
+        </div>
 
         {/* Google Calendar Connect */}
         <div className="rounded-2xl bg-[#111827] border border-slate-800 p-6 mb-8">
           <h2 className="text-xl font-medium mb-2">Google Calendar</h2>
           <p className="text-slate-300 mb-4">
-            Connect your Google Calendar so Planner can add focus blocks,
-            deadlines, and follow-ups automatically.
+            Connect your Google Calendar so Planner can add focus blocks, deadlines,
+            and follow-ups automatically.
           </p>
 
           <div className="flex gap-3 flex-wrap">
-            {/* Hard-coded, stable OAuth start route */}
+            {/* Stable OAuth start route; server will handle absolute URLs/redirects */}
             <a
               href="/api/google/oauth/start?state=%2Fsettings"
               className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-blue-600 hover:bg-blue-500 transition"
