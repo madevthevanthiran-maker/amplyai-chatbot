@@ -2,7 +2,8 @@
 import { getAuthUrl } from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
-  const from = typeof req.query.from === "string" ? req.query.from : "/settings";
-  const url = getAuthUrl(from);
-  return res.redirect(url);
+  const returnTo = req.query.returnTo || "/settings";
+  const url = getAuthUrl(returnTo);
+  res.writeHead(302, { Location: url });
+  res.end();
 }
