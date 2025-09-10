@@ -1,18 +1,19 @@
 // /pages/api/google/oauth/callback.js
-import { getOAuthClient, setTokensCookie } from "../../../lib/googleClient";
+import { getOAuth2Client, setTokensOnRes, absoluteUrl } from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
+  const { code, state } = req.query || {};
+  if (!code) {
+    res.status(400).send("Missing OAuth code");
+    return;
+  }
   try {
-    const { code, state } = req.query;
-    if (!code) throw new Error("Missing code");
-
-    const client = getOAuthClient();
+    const client = getOAuth2Client();
     const { tokens } = await client.getToken(code);
-    client.setCredentials(tokens);
+    setTokensOnRes(res, tokens);
 
-    setTokensCookie(res, tokens);
-
-    res.writeHead(302, { Location: typeof state === "string" ? state : "/settings" });
+    const to = typeof state === "string" && state ? state : "/settings";
+    res.writeHead(302, { Location: absoluteUrl(to) });
     res.end();
   } catch (err) {
     console.error("OAuth callback error:", err?.message);
