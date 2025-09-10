@@ -1,6 +1,6 @@
 // /pages/settings.jsx
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function Settings() {
   const [title, setTitle] = useState("Deep Work: AmplyAI Roadmap");
@@ -12,13 +12,29 @@ export default function Settings() {
   const [status, setStatus] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // NEW: connection badge state
+  const [connected, setConnected] = useState(null); // null=loading, true/false
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/google/status");
+        const j = await r.json();
+        if (alive) setConnected(!!j.connected);
+      } catch {
+        if (alive) setConnected(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   async function createEvent(e) {
     e.preventDefault();
     setStatus("");
     setCreating(true);
 
     try {
-      // Compose ISO strings (with seconds) for the API
       const startISO = new Date(`${date}T${startTime}:00`).toISOString().slice(0, 19);
       const endISO   = new Date(`${date}T${endTime}:00`).toISOString().slice(0, 19);
 
@@ -35,7 +51,6 @@ export default function Settings() {
         }),
       });
 
-      // Not connected → server returns the exact authUrl; follow it
       if (res.status === 401) {
         const j = await res.json().catch(() => ({}));
         const url = j?.authUrl || "/api/google/oauth/start?state=%2Fsettings";
@@ -63,34 +78,69 @@ export default function Settings() {
   return (
     <div className="min-h-screen bg-[#0b1220] text-slate-100">
       <div className="max-w-3xl mx-auto px-6 py-10">
-        {/* Header with Back button */}
+        {/* Header with Back button + status badge */}
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-semibold">Settings</h1>
-          <Link
-            href="/"
-            className="rounded-xl bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
-          >
-            ← Back to Chatbot
-          </Link>
+          <div className="flex items-center gap-3">
+            {/* Connection badge */}
+            <span
+              className={[
+                "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm border",
+                connected == null
+                  ? "border-slate-600 text-slate-300"
+                  : connected
+                  ? "border-emerald-500/50 text-emerald-300"
+                  : "border-amber-500/50 text-amber-300",
+              ].join(" ")}
+              title={
+                connected == null
+                  ? "Checking Google connection…"
+                  : connected
+                  ? "Google Calendar connected"
+                  : "Google Calendar not connected"
+              }
+            >
+              <span
+                className={[
+                  "h-2 w-2 rounded-full",
+                  connected == null
+                    ? "bg-slate-400"
+                    : connected
+                    ? "bg-emerald-400"
+                    : "bg-amber-400",
+                ].join(" ")}
+              />
+              {connected == null
+                ? "Checking…"
+                : connected
+                ? "Google connected"
+                : "Not connected"}
+            </span>
+
+            <Link
+              href="/"
+              className="rounded-xl bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
+            >
+              ← Back to Chatbot
+            </Link>
+          </div>
         </div>
 
         {/* Google Calendar Connect */}
         <div className="rounded-2xl bg-[#111827] border border-slate-800 p-6 mb-8">
           <h2 className="text-xl font-medium mb-2">Google Calendar</h2>
           <p className="text-slate-300 mb-4">
-            Connect your Google Calendar so Planner can add focus blocks, deadlines,
-            and follow-ups automatically.
+            Connect your Google Calendar so Planner can add focus blocks,
+            deadlines, and follow-ups automatically.
           </p>
 
           <div className="flex gap-3 flex-wrap">
-            {/* Stable OAuth start route; server will handle absolute URLs/redirects */}
             <a
               href="/api/google/oauth/start?state=%2Fsettings"
               className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-blue-600 hover:bg-blue-500 transition"
             >
               Connect Google Calendar
             </a>
-
             <a
               href="/api/google/oauth/logout"
               className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-slate-700 hover:bg-slate-600 transition"
