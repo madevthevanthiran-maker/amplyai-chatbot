@@ -1,6 +1,7 @@
 // /utils/focusClient.js
 import { parseFocusText } from "./parseFocus";
 
+// Safely read JSON body or fallback text
 async function readResponse(res) {
   const text = await res.text();
   try { return { json: JSON.parse(text), raw: text }; }
@@ -10,13 +11,15 @@ async function readResponse(res) {
 export async function tryHandleFocusCommand(rawText) {
   if (!/^block\s/i.test(rawText || "")) return { handled: false };
 
-  const parsed = parseFocusText(rawText);
-  if (!parsed.ok) {
-    return { handled: true, ok: false, message: parsed.error };
+  let parsed;
+  try {
+    parsed = parseFocusText(rawText);
+  } catch (err) {
+    return { handled: true, ok: false, message: err?.message || "Parse error" };
   }
+  if (!parsed.ok) return { handled: true, ok: false, message: parsed.error };
 
   const evt = parsed.data;
-
   const res = await fetch("/api/google/calendar/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -32,17 +35,14 @@ export async function tryHandleFocusCommand(rawText) {
 
   if (res.status === 401) {
     const { json } = await readResponse(res);
-    if (json?.authUrl) {
-      window.location.href = json.authUrl; // always PROD
-      return { handled: true, ok: false, message: "Redirecting to connect Google…" };
-    }
-    return { handled: true, ok: false, message: "Google not connected" };
+    const url = json?.authUrl || "/api/google/oauth/start?state=/settings";
+    window.location.href = url;
+    return { handled: true, ok: false, message: "Redirecting to connect Google…" };
   }
 
   const { json, raw } = await readResponse(res);
   if (!res.ok) {
-    const serverMsg = json?.error || raw || `Server error ${res.status}`;
-    return { handled: true, ok: false, message: serverMsg };
+    return { handled: true, ok: false, message: json?.error || raw || `Server error ${res.status}` };
   }
 
   if (json?.htmlLink) {
