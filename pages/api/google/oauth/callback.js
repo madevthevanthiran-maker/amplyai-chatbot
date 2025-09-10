@@ -1,22 +1,28 @@
 // /pages/api/google/oauth/callback.js
-import { getOAuth2Client, setTokensOnRes, absoluteUrl } from "../../../../lib/googleClient";
+import { getOAuth2Client } from "googleapis/build/src/apis/oauth2"; // not used, but ok
+import { getBaseUrl, setTokensCookie } from "../../../../lib/googleClient";
+import { google } from "googleapis";
+
+function getClient(req) {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = `${getBaseUrl(req)}/api/google/oauth/callback`;
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
 
 export default async function handler(req, res) {
-  const { code, state } = req.query || {};
-  if (!code) {
-    res.status(400).send("Missing OAuth code");
-    return;
-  }
   try {
-    const client = getOAuth2Client();
-    const { tokens } = await client.getToken(code);
-    setTokensOnRes(res, tokens);
-
-    const to = typeof state === "string" && state ? state : "/settings";
-    res.writeHead(302, { Location: absoluteUrl(to) });
-    res.end();
+    const { code, state } = req.query;
+    if (!code) {
+      return res.status(400).send("Missing code");
+    }
+    const oauth2 = getClient(req);
+    const { tokens } = await oauth2.getToken(code.toString());
+    setTokensCookie(res, tokens);
+    // Go back to where we started (default /settings)
+    const back = state ? state.toString() : "/settings";
+    return res.redirect(302, back);
   } catch (err) {
-    console.error("OAuth callback error:", err?.message);
-    res.status(500).send("OAuth failed");
+    return res.status(500).send(err?.message || "OAuth callback failed");
   }
 }
