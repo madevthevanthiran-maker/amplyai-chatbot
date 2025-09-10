@@ -1,7 +1,6 @@
 // /utils/focusClient.js
 import { parseFocusText } from "./parseFocus";
 
-// Safely read body (JSON or not)
 async function readResponse(res) {
   const text = await res.text();
   try { return { json: JSON.parse(text), raw: text }; }
@@ -17,18 +16,16 @@ export async function tryHandleFocusCommand(rawText) {
   }
 
   const evt = parsed.data;
-
   const res = await fetch("/api/google/calendar/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       title: evt.title,
       description: "Created via chat Focus command",
-      start: evt.startISO,     // "YYYY-MM-DDTHH:mm:ss"
+      start: evt.startISO,      // local wall time "YYYY-MM-DDTHH:mm:ss"
       end: evt.endISO,
-      timezone: evt.timezone,  // e.g., "Australia/Melbourne"
+      timezone: evt.timezone,   // IANA tz
       location: "Focus",
-      rrule: evt.rrule || null // e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR"
     }),
   });
 
@@ -42,14 +39,11 @@ export async function tryHandleFocusCommand(rawText) {
   }
 
   const { json, raw } = await readResponse(res);
-
   if (!res.ok) {
-    const serverMsg = json?.error || raw || `Server error ${res.status}`;
-    return { handled: true, ok: false, message: serverMsg };
+    const msg = json?.error || raw || `Server error ${res.status}`;
+    return { handled: true, ok: false, message: msg };
   }
 
-  if (json?.htmlLink) {
-    try { window.open(json.htmlLink, "_blank", "noopener,noreferrer"); } catch {}
-  }
-  return { handled: true, ok: true, message: json?.recurrence ? "Recurring focus block created" : "Focus block created" };
+  try { if (json?.htmlLink) window.open(json.htmlLink, "_blank", "noopener,noreferrer"); } catch {}
+  return { handled: true, ok: true, message: "Focus block created" };
 }
