@@ -1,8 +1,8 @@
 // /pages/api/google/oauth/logout.js
+import { clearTokensCookie } from "../../../../lib/googleClient";
 
-import { clearTokens } from "../../../../lib/googleClient";
-
-export default async function handler(req, res) {
-  clearTokens(res);
-  res.status(200).json({ ok: true });
+export default function handler(req, res) {
+  clearTokensCookie(res);
+  const next = typeof req.query.next === "string" ? req.query.next : "/settings";
+  res.redirect(302, next);
 }
