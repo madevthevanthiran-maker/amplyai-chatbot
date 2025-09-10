@@ -1,27 +1,41 @@
 // /pages/api/google/oauth/callback.js
-
 import {
   exchangeCodeForTokens,
-  writeTokensToRes,
+  setTokenCookies,
 } from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
-  const { code, state = "" } = req.query || {};
-  if (!code) {
-    return res.status(400).json({ error: "Missing code" });
-  }
-
   try {
-    const tokens = await exchangeCodeForTokens(code);
-    writeTokensToRes(res, tokens);
+    const { code, state } = req.query;
 
-    // Send user back to the app (state can be a return path like "/settings")
-    const returnTo = typeof state === "string" && state ? state : "/";
-    res.writeHead(302, { Location: returnTo + "?google=connected" });
-    res.end();
+    if (!code) {
+      console.error("OAuth callback: missing code", req.query);
+      return res.redirect("/settings?error=missing_code");
+    }
+
+    // Decode the `state` to know where to return
+    let from = "/settings";
+    if (state) {
+      try {
+        const parsed = JSON.parse(
+          Buffer.from(state, "base64").toString("utf8")
+        );
+        if (parsed?.from && typeof parsed.from === "string") from = parsed.from;
+      } catch (e) {
+        console.warn("Bad state", e);
+      }
+    }
+
+    const tokens = await exchangeCodeForTokens(code);
+    if (!tokens) {
+      console.error("OAuth callback: no tokens returned");
+      return res.redirect(`${from}?error=no_tokens`);
+    }
+
+    setTokenCookies(res, tokens);
+    return res.redirect(`${from}?connected=1`);
   } catch (err) {
-    console.error("OAuth callback error:", err);
-    res.writeHead(302, { Location: "/?google=error" });
-    res.end();
+    console.error("OAuth callback error:", err?.message, err?.response?.data);
+    return res.redirect("/settings?error=oauth_failed");
   }
 }
