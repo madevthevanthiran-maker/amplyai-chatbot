@@ -1,8 +1,7 @@
 // /pages/api/google/oauth/logout.js
-import { clearTokens, absoluteUrl } from "../../../../lib/googleClient";
+import { clearTokensCookie } from "../../../../lib/googleClient";
 
 export default function handler(req, res) {
-  clearTokens(res);
-  res.writeHead(302, { Location: absoluteUrl("/settings") });
-  res.end();
+  clearTokensCookie(res);
+  res.redirect(302, "/settings");
 }
