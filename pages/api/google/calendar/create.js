@@ -7,77 +7,37 @@ import {
 } from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    // Ensure/refresh tokens (set access cookie if needed)
     let tokens = await ensureFreshTokens(req, res);
     if (!tokens) tokens = readTokensFromReq(req);
 
     if (!tokens) {
-      // Not connected → tell client to redirect to connect flow
-      return res.status(401).json({
-        error: "Google not connected",
-        authUrl: getAuthUrl("/settings"),
-      });
+      // Not connected → share auth URL so client can redirect
+      return res.status(401).json({ error: "Google not connected", authUrl: getAuthUrl("/settings") });
     }
 
-    const {
-      title,
-      description,
-      start, // "YYYY-MM-DDTHH:mm:ss"
-      end,   // "YYYY-MM-DDTHH:mm:ss"
-      timezone,
-      location,
-      attendees,
-    } = req.body || {};
-
+    const { title, description, start, end, timezone, location, attendees } = req.body || {};
     if (!title || !start || !end) {
-      return res.status(400).json({
-        error: "Missing required fields: title, start, end",
-        received: { title, start, end },
-      });
+      return res.status(400).json({ error: "Missing required fields: title, start, end" });
     }
 
-    const calendar = clientWithTokens(tokens);
-
+    const { calendar } = clientWithTokens(tokens);
     const event = {
       summary: title,
       description: description || "",
       location: location || undefined,
       start: { dateTime: start, timeZone: timezone || "UTC" },
       end: { dateTime: end, timeZone: timezone || "UTC" },
-      attendees:
-        Array.isArray(attendees) && attendees.length
-          ? attendees.map((email) => ({ email }))
-          : undefined,
+      attendees: Array.isArray(attendees) && attendees.length ? attendees.map((email) => ({ email })) : undefined,
       reminders: { useDefault: true },
     };
 
-    const { data } = await calendar.events.insert({
-      calendarId: "primary",
-      requestBody: event,
-    });
-
-    return res.status(200).json({
-      id: data.id,
-      htmlLink: data.htmlLink,
-      status: data.status,
-    });
+    const { data } = await calendar.events.insert({ calendarId: "primary", requestBody: event });
+    return res.status(200).json({ id: data.id, htmlLink: data.htmlLink, status: data.status });
   } catch (err) {
-    console.error("Calendar create error:", {
-      message: err?.message,
-      code: err?.code,
-      response: err?.response?.data,
-    });
-
-    return res.status(500).json({
-      error:
-        err?.response?.data?.error?.message ||
-        err?.message ||
-        "Failed to create event",
-    });
+    console.error("Calendar create error:", { message: err?.message, code: err?.code, response: err?.response?.data });
+    return res.status(500).json({ error: err?.response?.data?.error?.message || err?.message || "Failed to create event" });
   }
 }
