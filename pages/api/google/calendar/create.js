@@ -12,22 +12,28 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ensure/refresh tokens
+    // Ensure/refresh tokens (set access cookie if needed)
     let tokens = await ensureFreshTokens(req, res);
     if (!tokens) tokens = readTokensFromReq(req);
 
     if (!tokens) {
-      // Not connected → let client redirect
+      // Not connected → tell client to redirect to connect flow
       return res.status(401).json({
         error: "Google not connected",
         authUrl: getAuthUrl("/settings"),
       });
     }
 
-    const { title, description, start, end, timezone, location, attendees } =
-      req.body || {};
+    const {
+      title,
+      description,
+      start, // "YYYY-MM-DDTHH:mm:ss"
+      end,   // "YYYY-MM-DDTHH:mm:ss"
+      timezone,
+      location,
+      attendees,
+    } = req.body || {};
 
-    // Validate inputs early and explicitly
     if (!title || !start || !end) {
       return res.status(400).json({
         error: "Missing required fields: title, start, end",
@@ -35,20 +41,14 @@ export default async function handler(req, res) {
       });
     }
 
-    // Build Calendar client and event
     const calendar = clientWithTokens(tokens);
+
     const event = {
       summary: title,
       description: description || "",
       location: location || undefined,
-      start: {
-        dateTime: start, // "YYYY-MM-DDTHH:mm:ss"
-        timeZone: timezone || "UTC",
-      },
-      end: {
-        dateTime: end,
-        timeZone: timezone || "UTC",
-      },
+      start: { dateTime: start, timeZone: timezone || "UTC" },
+      end: { dateTime: end, timeZone: timezone || "UTC" },
       attendees:
         Array.isArray(attendees) && attendees.length
           ? attendees.map((email) => ({ email }))
@@ -56,7 +56,6 @@ export default async function handler(req, res) {
       reminders: { useDefault: true },
     };
 
-    // Insert event
     const { data } = await calendar.events.insert({
       calendarId: "primary",
       requestBody: event,
@@ -68,18 +67,17 @@ export default async function handler(req, res) {
       status: data.status,
     });
   } catch (err) {
-    // Log for Vercel
     console.error("Calendar create error:", {
       message: err?.message,
       code: err?.code,
       response: err?.response?.data,
     });
 
-    // Return diagnostic info to the client (safe subset)
     return res.status(500).json({
-      error: err?.response?.data?.error?.message ||
-             err?.message ||
-             "Failed to create event",
+      error:
+        err?.response?.data?.error?.message ||
+        err?.message ||
+        "Failed to create event",
     });
   }
 }
