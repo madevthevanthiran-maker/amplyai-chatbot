@@ -1,9 +1,10 @@
 // /pages/api/google/oauth/start.js
-import { getAuthUrl } from "../../../../lib/googleClient";
+import { getAuthUrl } from "../../../lib/googleClient";
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   const state = typeof req.query.state === "string" ? req.query.state : "/settings";
   const url = getAuthUrl(state);
-  res.setHeader("Cache-Control", "no-store");
-  res.redirect(302, url);
+  // Always redirect to PROD auth URL (because getAuthUrl uses APP_URL)
+  res.writeHead(302, { Location: url });
+  res.end();
 }
