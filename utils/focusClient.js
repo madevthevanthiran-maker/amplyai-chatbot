@@ -1,7 +1,6 @@
 // /utils/focusClient.js
 import { parseFocusCommand } from "./parseFocus";
 
-// Safe JSON reader (server sometimes returns HTML on errors)
 async function readResponse(res) {
   const text = await res.text();
   try { return { json: JSON.parse(text), raw: text }; }
@@ -17,7 +16,6 @@ export async function tryHandleFocusCommand(rawText) {
   }
 
   const evt = parsed.data;
-
   let res;
   try {
     res = await fetch("/api/google/calendar/create", {
@@ -26,9 +24,9 @@ export async function tryHandleFocusCommand(rawText) {
       body: JSON.stringify({
         title: evt.title,
         description: "Created via chat Focus command",
-        start: evt.startISO,        // "YYYY-MM-DDTHH:mm:ss"
+        start: evt.startISO,
         end: evt.endISO,
-        timezone: evt.timezone,     // e.g. "Australia/Melbourne"
+        timezone: evt.timezone,
         location: "Focus",
       }),
     });
@@ -36,7 +34,6 @@ export async function tryHandleFocusCommand(rawText) {
     return { handled: true, ok: false, message: `Network error: ${e.message}` };
   }
 
-  // 401 => user not connected → redirect to OAuth
   if (res.status === 401) {
     const { json } = await readResponse(res);
     if (json?.authUrl) {
@@ -48,16 +45,11 @@ export async function tryHandleFocusCommand(rawText) {
 
   const { json, raw } = await readResponse(res);
   if (!res.ok) {
-    const msg =
-      json?.error ||
-      (typeof raw === "string" && raw.slice(0, 200)) ||
-      `Server error ${res.status}`;
-    return { handled: true, ok: false, message: msg };
+    return { handled: true, ok: false, message: json?.error || raw || `Server error ${res.status}` };
   }
 
   if (json?.htmlLink) {
     try { window.open(json.htmlLink, "_blank", "noopener,noreferrer"); } catch {}
   }
-
   return { handled: true, ok: true, message: "Focus block created" };
 }
