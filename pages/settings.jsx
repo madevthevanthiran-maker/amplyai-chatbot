@@ -1,5 +1,5 @@
 // /pages/settings.jsx
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 export default function Settings() {
   const [title, setTitle] = useState("Deep Work: AmplyAI Roadmap");
@@ -11,27 +11,19 @@ export default function Settings() {
   const [status, setStatus] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Build a stable absolute URL for OAuth (avoid preview URLs)
-  const APP_URL = useMemo(
-    () => process.env.NEXT_PUBLIC_APP_URL || "",
-    []
-  );
-
-  const connectHref = useMemo(() => {
-    // If APP_URL is missing, we still build something non-empty to avoid empty href.
-    const base = APP_URL || (typeof window !== "undefined" ? window.location.origin : "");
-    const state = encodeURIComponent("/settings");
-    return `${base}/api/google/oauth/start?state=${state}`;
-  }, [APP_URL]);
-
   async function createEvent(e) {
     e.preventDefault();
     setStatus("");
     setCreating(true);
+
     try {
-      // Compose ISO strings from date + time (seconds added for API)
-      const startISO = new Date(`${date}T${startTime}:00`).toISOString().slice(0, 19);
-      const endISO = new Date(`${date}T${endTime}:00`).toISOString().slice(0, 19);
+      // Compose ISO strings from date + time (ensure seconds because API expects them)
+      const startISO = new Date(`${date}T${startTime}:00`)
+        .toISOString()
+        .slice(0, 19);
+      const endISO = new Date(`${date}T${endTime}:00`)
+        .toISOString()
+        .slice(0, 19);
 
       const res = await fetch("/api/google/calendar/create", {
         method: "POST",
@@ -46,10 +38,11 @@ export default function Settings() {
         }),
       });
 
+      // Not connected → server returns the exact authUrl; follow it
       if (res.status === 401) {
-        // Not connected → let server tell us the exact URL (will already be absolute)
         const j = await res.json().catch(() => ({}));
-        const url = j?.authUrl || connectHref;
+        const url =
+          (j && j.authUrl) || "/api/google/oauth/start?state=%2Fsettings";
         window.location.href = url;
         return;
       }
@@ -64,7 +57,6 @@ export default function Settings() {
         `✔ Event created.${data.htmlLink ? " Opening in a new tab…" : ""}`
       );
       if (data.htmlLink) {
-        // open in new tab to verify
         window.open(data.htmlLink, "_blank", "noopener,noreferrer");
       }
     } catch (err) {
@@ -83,25 +75,19 @@ export default function Settings() {
         <div className="rounded-2xl bg-[#111827] border border-slate-800 p-6 mb-8">
           <h2 className="text-xl font-medium mb-2">Google Calendar</h2>
           <p className="text-slate-300 mb-4">
-            Connect your Google Calendar so Planner can add focus blocks, deadlines,
-            and follow-ups automatically.
+            Connect your Google Calendar so Planner can add focus blocks,
+            deadlines, and follow-ups automatically.
           </p>
 
-          {!APP_URL && (
-            <div className="mb-3 text-sm text-amber-300">
-              <strong>Heads up:</strong> <code>NEXT_PUBLIC_APP_URL</code> is not set.
-              OAuth may fail on preview URLs. Set it to your production domain in
-              Vercel env and redeploy.
-            </div>
-          )}
-
           <div className="flex gap-3 flex-wrap">
+            {/* Hard-coded, stable OAuth start route */}
             <a
-              href={connectHref}
+              href="/api/google/oauth/start?state=%2Fsettings"
               className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-blue-600 hover:bg-blue-500 transition"
             >
               Connect Google Calendar
             </a>
+
             <a
               href="/api/google/oauth/logout"
               className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-slate-700 hover:bg-slate-600 transition"
