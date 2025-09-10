@@ -1,9 +1,8 @@
 // /pages/api/google/oauth/start.js
 import { getAuthUrl } from "../../../../lib/googleClient";
 
-export default function handler(req, res) {
-  const state = typeof req.query.state === "string" ? req.query.state : "/settings";
-  const url = getAuthUrl(state);
-  res.writeHead(302, { Location: url });
-  res.end();
+export default async function handler(req, res) {
+  const state = (req.query.state || "/settings").toString();
+  const url = getAuthUrl(req, state);
+  return res.redirect(302, url);
 }
