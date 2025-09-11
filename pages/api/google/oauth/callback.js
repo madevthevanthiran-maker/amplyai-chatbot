@@ -1,24 +1,32 @@
 // /pages/api/google/oauth/callback.js
-import { oauth2Client, exchangeCodeForTokens, setTokenCookies } from "../../../../lib/googleClient";
+import {
+  exchangeCodeForTokens,
+  setTokenCookies,
+} from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
   try {
-    console.log("[oauth/callback] query:", req.query); // debug
+    console.log("[oauth/callback] query:", req.query);
 
-    const { code, state } = req.query;
+    const { code, state, error } = req.query;
+
+    if (error) {
+      console.error("[oauth/callback] provider error:", error);
+      return res.status(400).send("OAuth failed. Try again from Settings.");
+    }
+
     if (!code) {
       console.error("[oauth/callback] missing code");
       return res.status(400).send("OAuth failed. Try again from Settings.");
     }
 
-    // Exchange code for tokens
+    // Exchange auth code for tokens
     const { tokens } = await exchangeCodeForTokens(code);
-    console.log("[oauth/callback] got tokens:", Object.keys(tokens)); // safe log
+    console.log("[oauth/callback] tokens received:", Object.keys(tokens));
 
-    // Store tokens in cookies
     setTokenCookies(res, tokens);
 
-    // Redirect back to settings or state param
+    // Redirect to the page we came from (default: /settings)
     const redirectTo = state && typeof state === "string" ? state : "/settings";
     return res.redirect(302, redirectTo);
   } catch (err) {
