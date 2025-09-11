@@ -12,12 +12,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ensure/refresh tokens
     let tokens = await ensureFreshTokens(req, res);
     if (!tokens) tokens = readTokensFromReq(req);
 
     if (!tokens) {
-      // Not connected → tell the client where to go
       return res.status(401).json({
         error: "Google not connected",
         authUrl: getAuthUrl("/settings"),
@@ -33,7 +31,6 @@ export default async function handler(req, res) {
     }
 
     const calendar = clientWithTokens(tokens);
-
     const event = {
       summary: title,
       description: description || "",
@@ -63,7 +60,6 @@ export default async function handler(req, res) {
       code: err?.code,
       response: err?.response?.data,
     });
-
     return res.status(500).json({
       error:
         err?.response?.data?.error?.message ||
