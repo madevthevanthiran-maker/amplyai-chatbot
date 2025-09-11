@@ -1,27 +1,22 @@
-import { getOAuthClient } from "../../../../lib/googleClient";
+// /pages/api/google/oauth/start.js
+import { getAuthUrl } from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
   try {
-    const client = getOAuthClient();
-    const state = (req.query.state || "/settings").toString();
-
-    const url = client.generateAuthUrl({
-      access_type: "offline",
-      prompt: "consent",
-      scope: [
-        "https://www.googleapis.com/auth/calendar",
-        "https://www.googleapis.com/auth/calendar.events",
-      ],
-      state,
-    });
-
-    // If this endpoint is called by JS, return JSON; if clicked as <a>, redirect.
-    if (req.headers.accept?.includes("application/json")) {
-      res.status(200).json({ authUrl: url });
-    } else {
-      res.redirect(302, url);
-    }
-  } catch (e) {
-    res.status(500).send(`OAuth start failed: ${e.message}`);
+    // Optional ?state=/where/to/return
+    const state = typeof req.query.state === "string" ? req.query.state : "/settings";
+    const url = getAuthUrl(state);
+    // 302 to Google
+    res.writeHead(302, { Location: url });
+    res.end();
+  } catch (err) {
+    res
+      .status(500)
+      .send(`OAuth start failed: ${err?.message || String(err)}`);
   }
 }
