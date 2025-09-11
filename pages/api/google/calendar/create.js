@@ -1,70 +1,42 @@
-// /pages/api/google/calendar/create.js
-import {
-  ensureFreshTokens,
-  readTokensFromReq,
-  clientWithTokens,
-  getAuthUrl,
-} from "../../../../lib/googleClient";
+import { calendar, getOAuthClient } from "../../../../lib/googleClient";
+import { getSession } from "../../../../lib/session";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(405).end();
+
+  const session = getSession(req);
+  if (!session?.access_token) {
+    const base = process.env.NEXT_PUBLIC_APP_URL || "";
+    const authUrl = `${base}/api/google/oauth/start?state=${encodeURIComponent("/settings")}`;
+    return res.status(401).json({ error: "Not connected", authUrl });
   }
 
   try {
-    let tokens = await ensureFreshTokens(req, res);
-    if (!tokens) tokens = readTokensFromReq(req);
+    const client = getOAuthClient();
+    client.setCredentials(session);
 
-    if (!tokens) {
-      return res.status(401).json({
-        error: "Google not connected",
-        authUrl: getAuthUrl("/settings"),
-      });
-    }
+    const { title, description, start, end, timezone, location } = req.body;
 
-    const { title, description, start, end, timezone, location, attendees } = req.body || {};
-    if (!title || !start || !end) {
-      return res.status(400).json({
-        error: "Missing required fields: title, start, end",
-        received: { title, start, end },
-      });
-    }
-
-    const calendar = clientWithTokens(tokens);
     const event = {
-      summary: title,
-      description: description || "",
-      location: location || undefined,
-      start: { dateTime: start, timeZone: timezone || "UTC" },
-      end: { dateTime: end, timeZone: timezone || "UTC" },
-      attendees:
-        Array.isArray(attendees) && attendees.length
-          ? attendees.map((email) => ({ email }))
-          : undefined,
-      reminders: { useDefault: true },
+      summary: title || "Focus",
+      description: description || "Created via Planner",
+      start: { dateTime: `${start}`, timeZone: timezone || "UTC" },
+      end: { dateTime: `${end}`, timeZone: timezone || "UTC" },
+      location: location || "Focus",
+      reminders: {
+        useDefault: false,
+        overrides: [{ method: "popup", minutes: 30 }],
+      },
     };
 
-    const { data } = await calendar.events.insert({
+    const created = await calendar.events.insert({
+      auth: client,
       calendarId: "primary",
       requestBody: event,
     });
 
-    return res.status(200).json({
-      id: data.id,
-      htmlLink: data.htmlLink,
-      status: data.status,
-    });
-  } catch (err) {
-    console.error("Calendar create error:", {
-      message: err?.message,
-      code: err?.code,
-      response: err?.response?.data,
-    });
-    return res.status(500).json({
-      error:
-        err?.response?.data?.error?.message ||
-        err?.message ||
-        "Failed to create event",
-    });
+    res.status(200).json({ htmlLink: created.data.htmlLink || null });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 }
