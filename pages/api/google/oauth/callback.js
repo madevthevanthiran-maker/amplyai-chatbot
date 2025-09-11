@@ -1,25 +1,31 @@
 // /pages/api/google/oauth/callback.js
 import {
   oauth2Client,
-  writeTokensToRes,
+  setTokensCookie,
+  getAuthUrl,
 } from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
+  const { code, state } = req.query;
+
+  if (!code) {
+    // No code → start again
+    const url = getAuthUrl("/settings");
+    res.writeHead(302, { Location: url });
+    return res.end();
+  }
+
   try {
-    const { code, state } = req.query;
+    const client = oauth2Client();
+    const { tokens } = await client.getToken(code);
+    setTokensCookie(res, tokens);
 
-    if (!code) {
-      return res.status(400).send("Missing code");
-    }
-
-    const { tokens } = await oauth2Client.getToken(code);
-    writeTokensToRes(res, tokens);
-
-    const redirectPath = typeof state === "string" ? state : "/settings";
-    res.writeHead(302, { Location: redirectPath });
+    // Send user back to where they began (default /settings)
+    const dest = typeof state === "string" && state ? state : "/settings";
+    res.writeHead(302, { Location: dest });
     res.end();
-  } catch (err) {
-    console.error("OAuth callback error:", err?.response?.data || err);
-    res.status(500).send("OAuth failed");
+  } catch (e) {
+    console.error("OAuth callback error:", e?.message);
+    res.status(500).send("OAuth failed. Try again from Settings.");
   }
 }
