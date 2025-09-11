@@ -1,49 +1,46 @@
 // /utils/parseFocus.js
-// Parse "block ..." text into { title, startISO, endISO, timezone }
-// Supported examples:
+// Robust parser for: "block <start>-<end> <day|YYYY-MM-DD> for <title>"
+// Examples:
 //   block 2-4pm today for Deep Work
-//   block 10–11:30am today for Project Alpha        (en-dash ok)
-//   block 10am to 11am tomorrow for Standup         ("to" ok)
-//   block 2025-09-08 09:00-11:00 for Something
-//
-// NOTE: We normalize en/em/minus dashes to "-", and trim weird spaces.
+//   block 2–3pm today for Focus session          // en dash
+//   block 10am to 11:30am tomorrow for Standup   // "to" supported
+//   block 2025-09-11 10:00-11:30 for Team sync
 
 function normalizeInput(s) {
   if (!s) return "";
-  // replace en dash, em dash, figure dash, minus sign → hyphen
+  // Normalize dashes to ASCII hyphen
   s = s.replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, "-");
-  // replace " to " with hyphen (loosely, any spaces around)
+  // Normalize various spaces to regular space
+  s = s.replace(/\u00A0|\u2007|\u202F/g, " ");
+  // Support "to" as a range separator
   s = s.replace(/\s+to\s+/gi, "-");
-  // collapse whitespace
+  // Collapse spaces
   s = s.replace(/\s+/g, " ").trim();
   return s;
 }
 
 function parseTimePiece(piece) {
   // returns minutes since midnight or null
-  const s = piece.trim().toLowerCase();
+  const s = (piece || "").trim().toLowerCase();
 
-  // 24h HH or HH:MM
-  let m = s.match(/^(\d{1,2})(?::(\d{2}))$/);
+  // HH:MM (24h)
+  let m = s.match(/^(\d{1,2}):(\d{2})$/);
   if (m && !s.endsWith("am") && !s.endsWith("pm")) {
-    let h = parseInt(m[1], 10);
-    let min = m[2] ? parseInt(m[2], 10) : 0;
+    let h = +m[1], min = +m[2];
     if (h >= 0 && h <= 23 && min >= 0 && min <= 59) return h * 60 + min;
   }
 
-  // bare hour like "9" or "21" (24h)
+  // HH (24h)
   m = s.match(/^(\d{1,2})$/);
   if (m && !s.endsWith("am") && !s.endsWith("pm")) {
-    let h = parseInt(m[1], 10);
+    let h = +m[1];
     if (h >= 0 && h <= 23) return h * 60;
   }
 
-  // 12h like "9am", "9:30pm"
+  // 12h: "9am", "9:30pm"
   m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
   if (m) {
-    let h = parseInt(m[1], 10);
-    let min = m[2] ? parseInt(m[2], 10) : 0;
-    const ap = m[3];
+    let h = +m[1], min = m[2] ? +m[2] : 0, ap = m[3];
     if (h >= 1 && h <= 12 && min >= 0 && min <= 59) {
       if (ap === "pm" && h !== 12) h += 12;
       if (ap === "am" && h === 12) h = 0;
@@ -61,30 +58,27 @@ function minutesToDate(baseDate, minutes) {
   return d;
 }
 
-function dateForKeyword(keyword) {
+function dateForKeyword(k) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  const k = (keyword || "").toLowerCase();
-  if (k === "today") return today;
-  if (k === "tomorrow") return new Date(today.getTime() + dayMs);
-  if (k === "yesterday") return new Date(today.getTime() - dayMs);
+  const DAY = 24 * 60 * 60 * 1000;
+  const s = (k || "").toLowerCase();
+  if (s === "today") return today;
+  if (s === "tomorrow") return new Date(today.getTime() + DAY);
+  if (s === "yesterday") return new Date(today.getTime() - DAY);
   return null;
 }
 
 function parseDateToken(token) {
-  // Accepts YYYY-MM-DD
   const m = (token || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;
   const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
-  if (isNaN(d.getTime())) return null;
-  return d;
+  return isNaN(d.getTime()) ? null : d;
 }
 
-export function parseFocusText(input, defaultTz) {
+export function parseFocusText(rawInput, defaultTz) {
   try {
-    if (!input || typeof input !== "string") {
+    if (typeof rawInput !== "string" || !rawInput.trim()) {
       return { ok: false, error: "Empty input" };
     }
 
@@ -94,44 +88,36 @@ export function parseFocusText(input, defaultTz) {
         Intl.DateTimeFormat().resolvedOptions().timeZone) ||
       "UTC";
 
-    // Must start with "block "
-    let text = normalizeInput(input);
-    if (!/^block\s/i.test(text)) {
+    let input = normalizeInput(rawInput);
+
+    if (!/^block\s/i.test(input)) {
       return { ok: false, error: 'Command should start with "block"' };
     }
 
-    // Split "... for TITLE" (use the first " for " occurrence so titles can have "for")
-    const forMatch = text.replace(/^block\s+/i, "");
-    const parts = forMatch.split(/\s+for\s+/i);
+    // Split once on " for "
+    const afterBlock = input.replace(/^block\s+/i, "");
+    const parts = afterBlock.split(/\s+for\s+/i);
     if (parts.length < 2) {
       return { ok: false, error: 'Add "for <title>" at the end' };
     }
     const timePart = parts[0].trim();
     const title = parts.slice(1).join(" for ").trim() || "Focus block";
 
-    // Identify base date: keyword (today/tomorrow/yesterday) or literal YYYY-MM-DD
+    // Tokens for scanning
     const tokens = timePart.split(/\s+/);
-    let baseDate = null;
 
+    // Find base date
+    let baseDate = null;
     for (const t of tokens) {
-      const dkw = dateForKeyword(t);
-      if (dkw) {
-        baseDate = dkw;
-        break;
-      }
-      const d = parseDateToken(t);
-      if (d) {
-        baseDate = d;
-        break;
-      }
+      baseDate = dateForKeyword(t) || parseDateToken(t) || baseDate;
+      if (baseDate) break;
     }
     if (!baseDate) baseDate = dateForKeyword("today");
 
-    // Find start-end chunk: token that contains a hyphen after normalization
+    // Find range token
     let seToken = tokens.find((t) => t.includes("-"));
-    // In case the range got separated by spaces (rare), re-join neighbors
     if (!seToken) {
-      // Try to stitch something like "10:00" "-" "11:30am"
+      // Rare: tokens like ["10:00","-","11:30am"]
       for (let i = 0; i < tokens.length - 2; i++) {
         if (tokens[i + 1] === "-") {
           seToken = `${tokens[i]}-${tokens[i + 2]}`;
@@ -142,26 +128,23 @@ export function parseFocusText(input, defaultTz) {
     if (!seToken) {
       return {
         ok: false,
-        error: "Provide a start–end time (e.g., 9-11 or 2pm-3:30pm)",
+        error: "Provide a start–end time (e.g., 2-4pm or 10:00-11:30am)",
       };
     }
 
-    // Split range
-    const [startRaw0, endRaw0] = seToken.split("-");
-    if (!startRaw0 || !endRaw0) {
+    let [rawStart, rawEnd] = seToken.split("-");
+    if (!rawStart || !rawEnd) {
       return { ok: false, error: "Could not split the time range" };
     }
 
-    // If only one side has am/pm, copy it to the other (common shorthand: "10-11:30am")
-    const apEnd = endRaw0.match(/\b(am|pm)\b/i)?.[1]?.toLowerCase();
-    let startRaw = startRaw0;
-    let endRaw = endRaw0;
-    if (!/\b(am|pm)\b/i.test(startRaw) && apEnd) {
-      startRaw = `${startRaw}${apEnd}`;
+    // If only one side has am/pm, copy it across (e.g., "10-11:30am")
+    const endAp = (rawEnd.match(/\b(am|pm)\b/i) || [])[1];
+    if (endAp && !/\b(am|pm)\b/i.test(rawStart)) {
+      rawStart += endAp.toLowerCase();
     }
 
-    const startMin = parseTimePiece(startRaw);
-    const endMin = parseTimePiece(endRaw);
+    const startMin = parseTimePiece(rawStart);
+    const endMin = parseTimePiece(rawEnd);
 
     if (startMin == null || endMin == null) {
       return { ok: false, error: "Could not parse the start/end time" };
@@ -173,10 +156,7 @@ export function parseFocusText(input, defaultTz) {
     const startDate = minutesToDate(baseDate, startMin);
     const endDate = minutesToDate(baseDate, endMin);
 
-    // API expects "YYYY-MM-DDTHH:mm:ss" (no timezone suffix here; tz provided separately)
-    const startISO = new Date(
-      startDate.getTime() - startDate.getMilliseconds()
-    )
+    const startISO = new Date(startDate.getTime() - startDate.getMilliseconds())
       .toISOString()
       .slice(0, 19);
     const endISO = new Date(endDate.getTime() - endDate.getMilliseconds())
@@ -185,17 +165,13 @@ export function parseFocusText(input, defaultTz) {
 
     return {
       ok: true,
-      data: {
-        title,
-        startISO,
-        endISO,
-        timezone: tz,
-      },
+      data: { title, startISO, endISO, timezone: tz },
     };
-  } catch (err) {
+  } catch {
     return {
       ok: false,
-      error: "Parse failed. Try e.g. `block 2-4pm today for Deep Work`",
+      error:
+        "Parse failed. Try like: `block 2-4pm today for Deep Work` or `block 10am-11:30am tomorrow for Sprint`",
     };
   }
 }
