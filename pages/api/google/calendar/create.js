@@ -2,7 +2,7 @@
 import {
   ensureFreshTokens,
   readTokensFromReq,
-  calendarClient,
+  clientWithTokens,
   getAuthUrl,
 } from "../../../../lib/googleClient";
 
@@ -12,20 +12,19 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Try to obtain/refresh tokens
+    // Ensure/refresh tokens
     let tokens = await ensureFreshTokens(req, res);
     if (!tokens) tokens = readTokensFromReq(req);
 
     if (!tokens) {
-      // Not connected → always respond JSON with authUrl
-      return res
-        .status(401)
-        .json({ error: "Not connected", authUrl: getAuthUrl("/settings") });
+      // Not connected → tell the client where to go
+      return res.status(401).json({
+        error: "Google not connected",
+        authUrl: getAuthUrl("/settings"),
+      });
     }
 
-    const { title, description, start, end, timezone, location, attendees } =
-      req.body || {};
-
+    const { title, description, start, end, timezone, location, attendees } = req.body || {};
     if (!title || !start || !end) {
       return res.status(400).json({
         error: "Missing required fields: title, start, end",
@@ -33,14 +32,14 @@ export default async function handler(req, res) {
       });
     }
 
-    const calendar = calendarClient(tokens);
+    const calendar = clientWithTokens(tokens);
 
     const event = {
       summary: title,
       description: description || "",
       location: location || undefined,
       start: { dateTime: start, timeZone: timezone || "UTC" },
-      end:   { dateTime: end,   timeZone: timezone || "UTC" },
+      end: { dateTime: end, timeZone: timezone || "UTC" },
       attendees:
         Array.isArray(attendees) && attendees.length
           ? attendees.map((email) => ({ email }))
@@ -64,14 +63,6 @@ export default async function handler(req, res) {
       code: err?.code,
       response: err?.response?.data,
     });
-
-    const gError = err?.response?.data?.error;
-    if (gError?.status === "PERMISSION_DENIED") {
-      return res.status(403).json({
-        error:
-          "Request had insufficient authentication scopes. Disconnect and re-connect to approve the latest scopes.",
-      });
-    }
 
     return res.status(500).json({
       error:
