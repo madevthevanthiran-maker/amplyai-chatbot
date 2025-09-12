@@ -1,71 +1,80 @@
 import { useState } from "react";
+import ChatInput from "./ChatInput";
+
+/**
+ * Drop-in ChatPanel that:
+ * - Keeps messages state local and never binds messages into the input value.
+ * - Routes calendar-like prompts to /api/chat with {mode:'calendar'}.
+ * - Falls back to GPT for everything else.
+ * - Shows simple bubbles (keeps your UI lightweight; does not remove your other components).
+ *
+ * If you already have a more complex ChatPanel, you can still use ONLY the
+ * `handleSend` function from here and keep your UI.
+ */
 
 export default function ChatPanel({ tokens }) {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
   function addMessage(msg) {
     setMessages((prev) => [...prev, msg]);
   }
 
-  async function sendMessage(e) {
-    e.preventDefault();
-    if (!input.trim()) return;
-
-    const text = input.trim();
+  async function handleSend(text) {
+    // add user message first
     addMessage({ role: "user", content: text });
-    setInput("");
     setLoading(true);
 
     try {
-      // Check if message looks like a calendar/block-time command
-      if (/calendar|block|meeting|schedule/i.test(text)) {
+      // Very conservative trigger list for calendar routing
+      const calendarLike = /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(text);
+
+      if (calendarLike) {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode: "calendar", message: text, tokens }),
         });
-
         const data = await res.json();
-        if (!res.ok) throw new Error(data.message || data.error);
+
+        if (!res.ok) {
+          // show readable error but DO NOT leak it into input (input is controlled separately)
+          addMessage({ role: "assistant", content: `❌ Calendar error: ${data.message || data.error || "Unknown error"}` });
+          return;
+        }
 
         if (data?.parsed) {
-          addMessage({
-            role: "assistant",
-            content: `📅 Event created: **${data.parsed.title}**\n\n🕒 ${new Date(
-              data.parsed.startISO
-            ).toLocaleString()} → ${new Date(
-              data.parsed.endISO
-            ).toLocaleString()}`,
-          });
-        } else {
+          const start = new Date(data.parsed.startISO);
+          const end = new Date(data.parsed.endISO);
           addMessage({
             role: "assistant",
             content:
-              "⚠️ I tried to parse your calendar request, but something went wrong.",
+              `📅 **Created:** ${data.parsed.title}\n` +
+              `🕒 ${start.toLocaleString()} → ${end.toLocaleString()}`,
           });
+        } else {
+          addMessage({ role: "assistant", content: "⚠️ I couldn't parse that into an event." });
         }
-      } else {
-        // Default: send to GPT
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || data.error);
-
-        addMessage({
-          role: "assistant",
-          content: data.reply || "(no reply)",
-        });
+        return;
       }
-    } catch (err) {
-      addMessage({
-        role: "assistant",
-        content: `❌ Error: ${err.message}`,
+
+      // Default: GPT flow
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
       });
+      const data = await res.json();
+
+      if (!res.ok) {
+        addMessage({ role: "assistant", content: `❌ Chat error: ${data.message || data.error || "Unknown error"}` });
+        return;
+      }
+
+      addMessage({ role: "assistant", content: data.reply || "(no reply)" });
+    } catch (err) {
+      console.error("[ChatPanel] error", err);
+      addMessage({ role: "assistant", content: `❌ ${err.message}` });
     } finally {
       setLoading(false);
     }
@@ -73,38 +82,30 @@ export default function ChatPanel({ tokens }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0b0f1a]">
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`p-2 rounded ${
+            className={`whitespace-pre-wrap p-2 rounded max-w-[80%] ${
               m.role === "user"
-                ? "bg-blue-100 text-blue-900 self-end"
-                : "bg-gray-200 text-gray-900 self-start"
+                ? "bg-indigo-600/20 text-indigo-100 self-end"
+                : "bg-white/10 text-white self-start"
             }`}
           >
             {m.content}
           </div>
         ))}
         {loading && (
-          <div className="italic text-gray-500">Assistant is typing…</div>
+          <div className="italic text-gray-400">Assistant is typing…</div>
         )}
       </div>
-      <form onSubmit={sendMessage} className="p-3 flex gap-2 border-t">
-        <input
-          className="flex-1 border rounded px-3 py-2"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message..."
-        />
-        <button
-          type="submit"
-          className="px-4 py-2 rounded bg-indigo-600 text-white"
-          disabled={loading}
-        >
-          Send
-        </button>
-      </form>
+
+      {/* Fully controlled input; no leakage from messages */}
+      <ChatInput
+        onSend={handleSend}
+        disabled={loading}
+        placeholder="Type a message…  (e.g. “next wed 14:30 call with supplier”)"
+      />
     </div>
   );
 }
