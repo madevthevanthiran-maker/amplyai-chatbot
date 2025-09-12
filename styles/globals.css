@@ -78,3 +78,94 @@ button.preset-btn:active {
   cursor: grabbing;
   user-select: none;
 }
+
+/* =========================================================
+   Additions below: visual polish to make chat feel classic
+   (Non-breaking; only extends styles you already had)
+   ========================================================= */
+
+/* Subtle global scrollbar styling (keeps thin rails) */
+@supports (scrollbar-color: auto) {
+  * {
+    scrollbar-color: rgba(148, 163, 184, 0.35) transparent; /* slate-400/35 */
+    scrollbar-width: thin;
+  }
+}
+
+/* Helper utilities used by the refreshed chat */
+.bubble-shadow {
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.input-shadow {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.card-glass {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  backdrop-filter: saturate(140%) blur(8px);
+}
+
+/* Markdown-ish content inside assistant bubbles (safe defaults) */
+.chat-content h1,
+.chat-content h2,
+.chat-content h3 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.chat-content p + p {
+  margin-top: 0.5rem;
+}
+
+.chat-content ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.chat-content ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.chat-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background: rgba(15, 23, 42, 0.6);           /* slate-900/60 */
+  border: 1px solid rgba(148, 163, 184, 0.15); /* slate-400/15 */
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+}
+
+.chat-content pre {
+  overflow: auto;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: #0b1220;                          /* deep navy */
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+/* Link tone inside bubbles */
+.chat-content a {
+  color: #93c5fd;              /* sky-300 */
+  text-decoration: underline;
+}
+.chat-content a:hover {
+  color: #bfdbfe;              /* sky-200 */
+}
+
+/* Small fade-in for messages (nice but subtle) */
+@keyframes chatFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.message-appear {
+  animation: chatFadeIn 160ms ease-out both;
+}
