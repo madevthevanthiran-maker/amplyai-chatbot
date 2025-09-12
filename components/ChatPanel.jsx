@@ -1,32 +1,34 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ChatInput from "./ChatInput";
 
-/**
- * Drop-in ChatPanel that:
- * - Keeps messages state local and never binds messages into the input value.
- * - Routes calendar-like prompts to /api/chat with {mode:'calendar'}.
- * - Falls back to GPT for everything else.
- * - Shows simple bubbles (keeps your UI lightweight; does not remove your other components).
- *
- * If you already have a more complex ChatPanel, you can still use ONLY the
- * `handleSend` function from here and keep your UI.
- */
-
-export default function ChatPanel({ tokens }) {
+export default function ChatPanel() {
   const [messages, setMessages] = useState([]);
+  const [tokens, setTokens] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Load Google tokens on mount from your existing status endpoint
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/google/status");
+        const data = await res.json();
+        if (data.connected) setTokens(data.tokens);
+      } catch (e) {
+        console.error("[ChatPanel] failed to load tokens", e);
+      }
+    }
+    load();
+  }, []);
 
   function addMessage(msg) {
     setMessages((prev) => [...prev, msg]);
   }
 
   async function handleSend(text) {
-    // add user message first
     addMessage({ role: "user", content: text });
     setLoading(true);
 
     try {
-      // Very conservative trigger list for calendar routing
       const calendarLike = /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(text);
 
       if (calendarLike) {
@@ -38,8 +40,7 @@ export default function ChatPanel({ tokens }) {
         const data = await res.json();
 
         if (!res.ok) {
-          // show readable error but DO NOT leak it into input (input is controlled separately)
-          addMessage({ role: "assistant", content: `❌ Calendar error: ${data.message || data.error || "Unknown error"}` });
+          addMessage({ role: "assistant", content: `❌ Calendar error: ${data.message || data.error || "Not connected"}` });
           return;
         }
 
@@ -65,15 +66,9 @@ export default function ChatPanel({ tokens }) {
         body: JSON.stringify({ message: text }),
       });
       const data = await res.json();
-
-      if (!res.ok) {
-        addMessage({ role: "assistant", content: `❌ Chat error: ${data.message || data.error || "Unknown error"}` });
-        return;
-      }
-
+      if (!res.ok) throw new Error(data.message || data.error);
       addMessage({ role: "assistant", content: data.reply || "(no reply)" });
     } catch (err) {
-      console.error("[ChatPanel] error", err);
       addMessage({ role: "assistant", content: `❌ ${err.message}` });
     } finally {
       setLoading(false);
@@ -95,16 +90,12 @@ export default function ChatPanel({ tokens }) {
             {m.content}
           </div>
         ))}
-        {loading && (
-          <div className="italic text-gray-400">Assistant is typing…</div>
-        )}
+        {loading && <div className="italic text-gray-400">Assistant is typing…</div>}
       </div>
-
-      {/* Fully controlled input; no leakage from messages */}
       <ChatInput
         onSend={handleSend}
         disabled={loading}
-        placeholder="Type a message…  (e.g. “next wed 14:30 call with supplier”)"
+        placeholder="Type a message… (e.g. “next wed 14:30 call with supplier”)"
       />
     </div>
   );
