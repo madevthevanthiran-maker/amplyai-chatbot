@@ -5,10 +5,10 @@ import presets from "./presets";
 
 /**
  * ChatPanel
- * - Keeps existing calendar routing + GPT fallback intact
- * - Loads tokens from /api/google/status
- * - Wires OG PresetBar (expects {presets, onInsert, selectedMode})
- * - Clicking a preset immediately sends it through the same pipeline
+ * - Same logic (calendar routing + GPT fallback)
+ * - NEW: `showPresets` prop (default: false) to avoid double preset bars.
+ *   If your page already renders a PresetBar above the chat, pass showPresets={false}.
+ *   If you want ChatPanel to render its own PresetBar, pass showPresets={true}.
  */
 
 const DISPLAY_TZ =
@@ -32,15 +32,13 @@ function fmtDateTime(iso, locale = "en-SG", timeZone = DISPLAY_TZ) {
   }
 }
 
-export default function ChatPanel() {
+export default function ChatPanel({ showPresets = false, initialMode = "general" }) {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hello! How can I assist you today?" },
   ]);
   const [tokens, setTokens] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // Which preset group to show. You can set this from tabs elsewhere.
-  const [selectedMode, setSelectedMode] = useState("general"); // "general" | "mailmate" | "hirehelper" | "planner" | "focus"
+  const [selectedMode, setSelectedMode] = useState(initialMode);
 
   // Load Google tokens on mount
   useEffect(() => {
@@ -64,13 +62,10 @@ export default function ChatPanel() {
     setLoading(true);
 
     try {
-      // Detect calendar-like prompts (focus)
       const calendarLike =
         /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
           text
-        ) ||
-        // also route when using the "focus" preset group explicitly
-        selectedMode === "focus";
+        ) || selectedMode === "focus";
 
       if (calendarLike) {
         const res = await fetch("/api/chat", {
@@ -124,35 +119,17 @@ export default function ChatPanel() {
 
   return (
     <div className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
-      {/* Optional mode switcher (keep your own tabs if you have them) */}
-      {/* Example:
-      <div className="mx-auto max-w-3xl px-3 py-2 flex gap-2 text-sm">
-        {["general","mailmate","hirehelper","planner","focus"].map(m => (
-          <button
-            key={m}
-            onClick={() => setSelectedMode(m)}
-            className={`px-3 py-1.5 rounded-full border ${selectedMode===m ? "bg-indigo-600 text-white border-indigo-500" : "bg-white/5 text-white/80 border-white/10"}`}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
-      */}
-
-      {/* Preset bar using your OG component (works via onInsert) */}
-      <div className="mx-auto w-full max-w-3xl px-3">
-        <PresetBar
-          presets={presets[selectedMode] || []}
-          selectedMode={selectedMode}
-          onInsert={(prompt) => {
-            if (prompt && typeof prompt === "string") {
-              // Send via same pipeline as typing
-              handleSend(prompt);
-            }
-          }}
-          className="mb-1"
-        />
-      </div>
+      {/* Optional in-panel preset bar (off by default to prevent duplicates) */}
+      {showPresets && (
+        <div className="mx-auto w-full max-w-3xl px-3">
+          <PresetBar
+            presets={presets[selectedMode] || []}
+            selectedMode={selectedMode}
+            onInsert={(prompt) => prompt && handleSend(prompt)}
+            className="mb-1"
+          />
+        </div>
+      )}
 
       {/* Conversation */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
