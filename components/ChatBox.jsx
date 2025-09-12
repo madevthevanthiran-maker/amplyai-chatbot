@@ -1,20 +1,32 @@
-// components/ChatBox.jsx
 import { useEffect, useRef, useState } from "react";
 import { askGeneral } from "@/utils/chatClient";
 
+/**
+ * ChatBox (updated to support preset buttons)
+ *
+ * - Same UI/logic as before for manual typing.
+ * - NEW: `refCallback` prop exposes a function you (parent) can call to
+ *   programmatically send a preset prompt into the chat, e.g. from PresetBar.
+ *
+ *   Usage (parent):
+ *     const sendRef = useRef(null);
+ *     <ChatBox refCallback={(fn) => (sendRef.current = fn)} />
+ *     // later, when a preset is clicked:
+ *     sendRef.current?.("Explain simply how transformers work.");
+ */
 export default function ChatBox({
   storageKey = "pp.general",
   placeholder = "Ask me anything…",
   header = "General Chat",
   system = "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully.",
+  refCallback, // <-- NEW
 }) {
-  const [messages, setMessages] = useState([
-    { role: "system", content: system },
-  ]);
+  const [messages, setMessages] = useState([{ role: "system", content: system }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollerRef = useRef(null);
 
+  // Load saved
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
@@ -25,23 +37,22 @@ export default function ChatBox({
     } catch {}
   }, [storageKey]);
 
+  // Save on change
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(messages));
     } catch {}
   }, [messages, storageKey]);
 
+  // Autoscroll
   useEffect(() => {
     if (scrollerRef.current) {
       scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
     }
   }, [messages, loading]);
 
-  async function send() {
-    const content = input.trim();
-    if (!content) return;
-    setInput("");
-
+  // Core "turn" used by both manual send and external (preset) send
+  async function runTurn(content) {
     const userMsg = { role: "user", content };
     const convo = messages.filter((m) => m.role !== "system");
     const next = [...convo, userMsg];
@@ -61,6 +72,31 @@ export default function ChatBox({
     }
   }
 
+  // Manual send
+  async function send() {
+    const content = input.trim();
+    if (!content) return;
+    setInput("");
+    await runTurn(content);
+  }
+
+  // External send (called by parent via refCallback for preset buttons)
+  async function sendExternal(text) {
+    const content = (text || "").trim();
+    if (!content) return;
+    // optional: show it in the input briefly (comment out if you don't want this)
+    // setInput(content);
+    await runTurn(content);
+  }
+
+  // Expose external sender
+  useEffect(() => {
+    if (typeof refCallback === "function") {
+      refCallback(sendExternal);
+    }
+  }, [refCallback]); // keep stable; don't include sendExternal to avoid reassignments
+
+  // Key handling
   function onKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
