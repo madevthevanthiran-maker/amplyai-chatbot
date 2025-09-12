@@ -4,18 +4,16 @@ import PresetBar from "@/components/PresetBar";
 import presets from "@/components/presets";
 
 /**
- * Chat page (locked-in)
- * - Renders ONE PresetBar and wires it to ChatBox via refCallback.
- * - Uses your existing PresetBar API: { presets, onInsert, selectedMode }.
- * - Switch modes to change the preset set (general/mailmate/hirehelper/planner/focus).
+ * Chat page (single source of truth)
+ * - Renders ONE PresetBar and forwards clicks to ChatBox via refCallback.
+ * - No duplicate bars; no hidden state.
  */
 export default function ChatPage() {
   const [mode, setMode] = useState("general"); // "general" | "mailmate" | "hirehelper" | "planner" | "focus"
-  const sendRef = useRef(null); // ChatBox will give us a function to send text
+  const sendRef = useRef(null); // ChatBox exposes a function here
 
   return (
     <div className="min-h-screen bg-[#0b0f1a]">
-      {/* Mode chips (reuse/replace with your existing tab header as you wish) */}
       <div className="mx-auto max-w-4xl px-4 pt-4 pb-2 flex flex-wrap gap-2 text-sm">
         {[
           ["general", "Chat (general)"],
@@ -41,22 +39,23 @@ export default function ChatPage() {
         })}
       </div>
 
-      {/* SINGLE preset bar at top — forwards clicks to ChatBox */}
+      {/* SINGLE preset bar */}
       <div className="mx-auto w-full max-w-4xl px-4">
         <PresetBar
           presets={presets[mode] || []}
           selectedMode={mode}
           onInsert={(text) => {
+            // Fire preset text into ChatBox
             if (sendRef.current) sendRef.current(text);
           }}
         />
       </div>
 
-      {/* ChatBox exposes its sender through refCallback */}
+      {/* ChatBox exposes its programmatic sender */}
       <div className="mx-auto max-w-4xl px-4 pt-3 pb-8">
         <ChatBox
           refCallback={(fn) => {
-            sendRef.current = fn; // programmatic sender
+            sendRef.current = fn;
           }}
           header="General Chat"
         />
