@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { askGeneral } from "@/utils/chatClient";
 
 /**
- * ChatBox (locked-in)
+ * ChatBox (locked-in with preset support)
  * - Same UI/logic for manual typing.
- * - Exposes `refCallback` so parent (chat page) or PresetBar can send text
- *   programmatically into the chat.
+ * - Adds `refCallback` so a parent (page) or PresetBar can send text
+ *   programmatically: refFn("your preset text").
  */
 export default function ChatBox({
   storageKey = "pp.general",
   placeholder = "Ask me anything…",
   header = "General Chat",
   system = "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully.",
-  refCallback, // NEW: parent gets a function to send preset text
+  refCallback, // <-- expose programmatic sender
 }) {
   const [messages, setMessages] = useState([{ role: "system", content: system }]);
   const [input, setInput] = useState("");
@@ -44,7 +44,7 @@ export default function ChatBox({
     }
   }, [messages, loading]);
 
-  // Core turn (shared by manual + external send)
+  // Shared turn (manual + external)
   async function runTurn(content) {
     const userMsg = { role: "user", content };
     const convo = messages.filter((m) => m.role !== "system");
@@ -73,21 +73,21 @@ export default function ChatBox({
     await runTurn(content);
   }
 
-  // Programmatic send (used by PresetBar via refCallback)
+  // Programmatic send (for presets)
   async function sendExternal(text) {
     const content = (text || "").trim();
     if (!content) return;
     await runTurn(content);
   }
 
-  // Expose the sender to parent
+  // Expose programmatic sender
   useEffect(() => {
     if (typeof refCallback === "function") {
       refCallback(sendExternal);
     }
-  }, [refCallback]); // keep stable reference for parent
+  }, [refCallback]); // stable
 
-  // Key handling
+  // Enter to send
   function onKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -196,7 +196,7 @@ export default function ChatBox({
           border-radius: 12px;
           border: 1px solid rgba(71, 127, 255, 0.5);
           background: rgba(71, 127, 255, 0.25);
-          cursor: pointer;
+          cursor: pointer.
         }
         .pp-send:disabled {
           opacity: 0.6;
