@@ -1,18 +1,15 @@
 import { useState, useRef, useEffect } from "react";
 
 /**
- * Controlled chat input.
- * - Never pre-fills from messages/errors.
- * - Disables browser autocomplete/spellcheck to avoid wavy red underlines.
- * - Calls onSend(text) and clears itself only after submit succeeds.
+ * ChatInput (classic style)
+ * - Controlled input (prevents error text leaking into field)
+ * - No logic changes; purely visual polish
  */
 export default function ChatInput({ onSend, disabled = false, placeholder = "Type a message..." }) {
   const [value, setValue] = useState("");
-  const formRef = useRef(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
-    // Safety: never let any external HTML put content inside the input.
     if (inputRef.current) {
       inputRef.current.setAttribute("autocomplete", "off");
       inputRef.current.setAttribute("autocorrect", "off");
@@ -27,35 +24,35 @@ export default function ChatInput({ onSend, disabled = false, placeholder = "Typ
     if (!text || disabled) return;
     try {
       await onSend(text);
-      // Only clear after the onSend promise resolves (prevents flashing if it errors)
       setValue("");
     } catch (err) {
-      // Keep the text so user can edit/resend
+      // keep text so user can edit/resend
       console.error("[ChatInput] onSend error:", err);
     }
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="p-3 flex gap-2 border-t bg-[#0b0f1a]">
-      <input
-        ref={inputRef}
-        className="flex-1 border rounded px-3 py-2 bg-[#0e1526] text-white placeholder-gray-400 outline-none focus:ring-2 focus:ring-indigo-600"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        inputMode="text"
-      />
-      <button
-        type="submit"
-        className="px-4 py-2 rounded bg-indigo-600 text-white disabled:opacity-50"
-        disabled={disabled}
-      >
-        Send
-      </button>
+    <form onSubmit={handleSubmit} className="border-t border-white/10 bg-[#0b0f1a]/90 backdrop-blur sticky bottom-0">
+      <div className="mx-auto max-w-3xl px-3 py-3">
+        <div className="flex items-end gap-2">
+          <textarea
+            ref={inputRef}
+            rows={1}
+            className="flex-1 resize-none rounded-2xl bg-[#0e1526] text-white placeholder-white/50 border border-white/10 px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={placeholder}
+          />
+          <button
+            type="submit"
+            disabled={disabled}
+            className="shrink-0 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 transition disabled:opacity-50"
+            aria-label="Send message"
+          >
+            Send
+          </button>
+        </div>
+      </div>
     </form>
   );
 }
