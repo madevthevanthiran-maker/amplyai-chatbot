@@ -2,24 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { askGeneral } from "@/utils/chatClient";
 
 /**
- * ChatBox (updated to support preset buttons)
- *
- * - Same UI/logic as before for manual typing.
- * - NEW: `refCallback` prop exposes a function you (parent) can call to
- *   programmatically send a preset prompt into the chat, e.g. from PresetBar.
- *
- *   Usage (parent):
- *     const sendRef = useRef(null);
- *     <ChatBox refCallback={(fn) => (sendRef.current = fn)} />
- *     // later, when a preset is clicked:
- *     sendRef.current?.("Explain simply how transformers work.");
+ * ChatBox (locked-in)
+ * - Same UI/logic for manual typing.
+ * - Exposes `refCallback` so parent (chat page) or PresetBar can send text
+ *   programmatically into the chat.
  */
 export default function ChatBox({
   storageKey = "pp.general",
   placeholder = "Ask me anything…",
   header = "General Chat",
   system = "You are Progress Partner, a helpful, concise assistant. Answer plainly and helpfully.",
-  refCallback, // <-- NEW
+  refCallback, // NEW: parent gets a function to send preset text
 }) {
   const [messages, setMessages] = useState([{ role: "system", content: system }]);
   const [input, setInput] = useState("");
@@ -51,7 +44,7 @@ export default function ChatBox({
     }
   }, [messages, loading]);
 
-  // Core "turn" used by both manual send and external (preset) send
+  // Core turn (shared by manual + external send)
   async function runTurn(content) {
     const userMsg = { role: "user", content };
     const convo = messages.filter((m) => m.role !== "system");
@@ -80,21 +73,19 @@ export default function ChatBox({
     await runTurn(content);
   }
 
-  // External send (called by parent via refCallback for preset buttons)
+  // Programmatic send (used by PresetBar via refCallback)
   async function sendExternal(text) {
     const content = (text || "").trim();
     if (!content) return;
-    // optional: show it in the input briefly (comment out if you don't want this)
-    // setInput(content);
     await runTurn(content);
   }
 
-  // Expose external sender
+  // Expose the sender to parent
   useEffect(() => {
     if (typeof refCallback === "function") {
       refCallback(sendExternal);
     }
-  }, [refCallback]); // keep stable; don't include sendExternal to avoid reassignments
+  }, [refCallback]); // keep stable reference for parent
 
   // Key handling
   function onKeyDown(e) {
