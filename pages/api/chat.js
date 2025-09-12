@@ -1,52 +1,53 @@
-// pages/api/chat.js
-import OpenAI from "openai";
-
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
+    const { mode, message, tokens } = req.body;
+
+    // Calendar mode
+    if (mode === "calendar") {
+      const r = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/google/calendar/parse-create`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: message, tokens, timezone: "Asia/Singapore" }),
+        }
+      );
+      const data = await r.json();
+      return res.status(r.status).json(data);
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({
-        error:
-          "OPENAI_API_KEY is missing. Set it in Vercel → Project → Settings → Environment Variables, then redeploy.",
-      });
-    }
+    // Default: GPT response
+    const systemPrompt =
+      "You are Progress Partner, a helpful assistant. Answer plainly and helpfully.";
 
-    const { messages = [], mode = "general" } = req.body || {};
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "No messages provided." });
-    }
-
-    const SYSTEM = {
-      general:
-        "Be concise, helpful, and structured. When useful, add short sources or links. Use bullets for clarity.",
-      mailmate:
-        "Write crisp, outcome-driven emails with a friendly, confident tone. Include subject options if asked.",
-      hirehelper:
-        "Turn notes into recruiter-ready bullets using STAR (Situation/Task, Action, Result). Quantify impact.",
-      planner:
-        "Break goals into doable tasks with realistic time estimates, buffers, and a weekly schedule. Note risks & mitigations.",
+    const payload = {
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message },
+      ],
+      temperature: 0.7,
     };
 
-    const client = new OpenAI({ apiKey });
-
-    const resp = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.4,
-      messages: [
-        { role: "system", content: SYSTEM[mode] || SYSTEM.general },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
-      ],
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
     });
 
-    const text = resp?.choices?.[0]?.message?.content?.trim() || "(No response)";
-    return res.status(200).json({ text });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error?.message || "OpenAI API error");
+
+    return res.status(200).json({ reply: data.choices[0].message.content });
   } catch (err) {
-    console.error("/api/chat error:", err);
-    const msg = err?.response?.data?.error?.message || err?.message || "Unknown error";
-    return res.status(500).json({ error: msg });
+    console.error("[api/chat] error", err);
+    return res.status(500).json({ error: err.message });
   }
 }
