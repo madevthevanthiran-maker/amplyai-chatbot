@@ -1,22 +1,16 @@
-// components/PresetBar.jsx
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
- * Horizontal preset bar with:
- *  - slim visible scrollbar (styled via CSS)
- *  - chevrons (left/right)
- *  - mouse wheel to scroll horizontally
- *  - click-and-drag to scroll
- *  - keyboard arrow keys
+ * Your OG PresetBar, with one safety: default no-op for onInsert
+ * so clicks never silently fail if the parent forgets to pass it.
  */
 export default function PresetBar({
   presets = [],
-  onInsert,
+  onInsert = () => {},   // <— important default
   selectedMode,
   className = "",
 }) {
   const stripRef = useRef(null);
-
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
 
@@ -39,44 +33,21 @@ export default function PresetBar({
     setTimeout(computeEdges, 220);
   };
 
-  // Drag-to-scroll
+  // drag-to-scroll
   useEffect(() => {
     const el = stripRef.current;
     if (!el) return;
-
-    let isDown = false;
-    let startX = 0;
-    let startLeft = 0;
-
-    const onDown = (e) => {
-      isDown = true;
-      startX = e.pageX;
-      startLeft = el.scrollLeft;
-      el.classList.add("dragging");
-    };
-    const onMove = (e) => {
-      if (!isDown) return;
-      const dx = e.pageX - startX;
-      el.scrollLeft = startLeft - dx;
-      computeEdges();
-    };
-    const onUp = () => {
-      isDown = false;
-      el.classList.remove("dragging");
-    };
-
+    let isDown = false, startX = 0, startLeft = 0;
+    const onDown = (e) => { isDown = true; startX = e.pageX; startLeft = el.scrollLeft; el.classList.add("dragging"); };
+    const onMove = (e) => { if (!isDown) return; el.scrollLeft = startLeft - (e.pageX - startX); computeEdges(); };
+    const onUp = () => { isDown = false; el.classList.remove("dragging"); };
     el.addEventListener("mousedown", onDown);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-
-    return () => {
-      el.removeEventListener("mousedown", onDown);
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
+    return () => { el.removeEventListener("mousedown", onDown); window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
-  // Wheel: map vertical wheel to horizontal scroll
+  // wheel map
   useEffect(() => {
     const el = stripRef.current;
     if (!el) return;
@@ -91,34 +62,21 @@ export default function PresetBar({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
-  // Recompute edges on mount, on resize, on scroll, and when mode/presets change
   useLayoutEffect(() => {
     const el = stripRef.current;
     if (!el) return;
-
     const ro = new ResizeObserver(() => requestAnimationFrame(computeEdges));
     ro.observe(el);
-
     const onScroll = () => computeEdges();
     el.addEventListener("scroll", onScroll, { passive: true });
-
     const raf = requestAnimationFrame(computeEdges);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      el.removeEventListener("scroll", onScroll);
-    };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); el.removeEventListener("scroll", onScroll); };
   }, [selectedMode, presets?.length]);
 
-  // Keyboard
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "ArrowLeft") {
-        scrollByAmount("left");
-      } else if (e.key === "ArrowRight") {
-        scrollByAmount("right");
-      }
+      if (e.key === "ArrowLeft") scrollByAmount("left");
+      else if (e.key === "ArrowRight") scrollByAmount("right");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -128,7 +86,6 @@ export default function PresetBar({
 
   return (
     <div className={`relative w-full mt-2 ${className}`}>
-      {/* Left chevron (always clickable; if no room, it just won't move) */}
       <button
         type="button"
         aria-label="Scroll left"
@@ -144,7 +101,6 @@ export default function PresetBar({
         <ChevronLeft />
       </button>
 
-      {/* Scrollable strip (shows a slim scrollbar) */}
       <div className="px-10">
         <div
           ref={stripRef}
@@ -157,19 +113,17 @@ export default function PresetBar({
               type="button"
               className="preset-btn"
               title={p.text?.slice(0, 160) ?? p.label}
-              onClick={() => onInsert?.(p.text ?? "")}
+              onClick={() => onInsert(p.text ?? "")}
             >
               {p.label}
             </button>
           ))}
         </div>
 
-        {/* Edge fades (visual only, never block clicks) */}
         <span className="pointer-events-none absolute inset-y-0 left-8 w-8 bg-gradient-to-r from-[#0a0a0a] to-transparent" />
         <span className="pointer-events-none absolute inset-y-0 right-8 w-8 bg-gradient-to-l from-[#0a0a0a] to-transparent" />
       </div>
 
-      {/* Right chevron */}
       <button
         type="button"
         aria-label="Scroll right"
@@ -195,7 +149,6 @@ function ChevronLeft(props) {
     </svg>
   );
 }
-
 function ChevronRight(props) {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" {...props}>
