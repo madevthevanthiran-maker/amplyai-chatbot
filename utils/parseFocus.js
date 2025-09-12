@@ -1,125 +1,127 @@
-// Parse "block ..." text into { title, startISO, endISO, timezone }.
-// Supported examples:
-//   block 9-11 today for Deep Work
-//   block 2pm–3:30pm today for sprint
-//   block 2025-09-11 10:00–11:30 for Team sync
+// /utils/parseFocus.js
+//
+// Parses commands like:
+//  - "block 2–4pm today for Deep Work"
+//  - "block 10am–11:30am tomorrow for Team sync"
+//  - "block 2025-09-12 05:00-07:00 for AmplyAI workshop"  <-- new case
+//
+// Returns { title, startISO, endISO, timezoneHint? } or throws Error.
 
-function parseTimePiece(piece) {
-  // minutes since midnight or null
-  const s = piece.trim().toLowerCase();
+const DASH_RX = /[\u2012\u2013\u2014\u2212]/g; // figure/en/en-dash/em minus → '-'
+function normalize(text) {
+  return text
+    .trim()
+    .replace(DASH_RX, "-")
+    .replace(/\s+/g, " ");
+}
 
-  // 24h "HH[:mm]"
-  let m = s.match(/^(\d{1,2})(?::(\d{2}))?$/);
-  if (m && !s.endsWith("am") && !s.endsWith("pm")) {
-    let h = parseInt(m[1], 10);
-    let min = m[2] ? parseInt(m[2], 10) : 0;
-    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) return h * 60 + min;
+// simple zero-pad
+const z2 = (n) => (n < 10 ? `0${n}` : `${n}`);
+
+function toLocalISO(dateStr, timeStr) {
+  // dateStr = "YYYY-MM-DD", timeStr = "HH:MM" (24h) or "H:MMam"/"H:MMpm" already converted.
+  // Emit naive local ISO (no Z). Google API is given an explicit IANA timeZone separately.
+  const [H, M] = timeStr.split(":").map((v) => parseInt(v, 10));
+  return `${dateStr}T${z2(H)}:${z2(M)}:00`;
+}
+
+function parse24h(t) {
+  // "5:00" → "05:00", "07:30" → "07:30"
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t);
+  if (!m) return null;
+  let hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return `${z2(hh)}:${z2(mm)}`;
+}
+
+function parseAmPm(t) {
+  // "2pm", "2:30pm", "11am"
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(t);
+  if (!m) return null;
+  let hh = parseInt(m[1], 10);
+  const mm = m[2] ? parseInt(m[2], 10) : 0;
+  const ap = m[3].toLowerCase();
+  if (hh < 1 || hh > 12 || mm < 0 || mm > 59) return null;
+  if (ap === "pm" && hh !== 12) hh += 12;
+  if (ap === "am" && hh === 12) hh = 0;
+  return `${z2(hh)}:${z2(mm)}`;
+}
+
+function resolveRelativeDate(word, now = new Date()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  if (/^today$/i.test(word)) return d.toISOString().slice(0, 10);
+  if (/^tomorrow$/i.test(word)) {
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
   }
+  return null;
+}
 
-  // 12h like "9am", "9:30pm"
-  m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
-  if (m) {
-    let h = parseInt(m[1], 10);
-    let min = m[2] ? parseInt(m[2], 10) : 0;
-    const ap = m[3];
-    if (h >= 1 && h <= 12 && min >= 0 && min <= 59) {
-      if (ap === "pm" && h !== 12) h += 12;
-      if (ap === "am" && h === 12) h = 0;
-      return h * 60 + min;
+export function parseFocusCommand(input, opts = {}) {
+  const { now = new Date() } = opts;
+  const text = normalize(input);
+
+  // 1) ISO date + 24h range (NEW): "block 2025-09-12 05:00-07:00 for Title"
+  {
+    const rx = /^block\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})-(\d{1,2}:\d{2})\s+for\s+(.+)$/i;
+    const m = rx.exec(text);
+    if (m) {
+      const [, dateStr, t1, t2, title] = m;
+      const a = parse24h(t1);
+      const b = parse24h(t2);
+      if (!a || !b) throw new Error("Could not parse the start/end time");
+      return {
+        title: title.trim(),
+        startISO: toLocalISO(dateStr, a),
+        endISO: toLocalISO(dateStr, b),
+      };
     }
   }
 
-  return null;
-}
-
-function minutesToDate(baseDate, minutes) {
-  const d = new Date(baseDate);
-  d.setHours(0, 0, 0, 0);
-  d.setMinutes(minutes);
-  return d;
-}
-
-function dateForKeyword(keyword) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  const k = (keyword || "").toLowerCase();
-  if (k === "today") return today;
-  if (k === "tomorrow") return new Date(today.getTime() + dayMs);
-  if (k === "yesterday") return new Date(today.getTime() - dayMs);
-  return null;
-}
-
-function parseDateToken(token) {
-  // Accepts YYYY-MM-DD
-  const m = (token || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return null;
-  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-export function parseFocusText(input, defaultTz) {
-  if (!input || typeof input !== "string") return { ok: false, error: "Empty input" };
-
-  const tz = defaultTz || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const text = input.trim();
-
-  // Must start with "block "
-  if (!/^block\s/i.test(text)) {
-    return { ok: false, error: 'Command should start with "block"' };
+  // 2) Relative day + 24h range: "block 14:00-16:00 today for Title"
+  {
+    const rx = /^block\s+(\d{1,2}:\d{2})-(\d{1,2}:\d{2})\s+(today|tomorrow)\s+for\s+(.+)$/i;
+    const m = rx.exec(text);
+    if (m) {
+      const [, t1, t2, rel, title] = m;
+      const dateStr = resolveRelativeDate(rel, now);
+      const a = parse24h(t1);
+      const b = parse24h(t2);
+      if (!dateStr || !a || !b) throw new Error("Could not parse the start/end time");
+      return {
+        title: title.trim(),
+        startISO: toLocalISO(dateStr, a),
+        endISO: toLocalISO(dateStr, b),
+      };
+    }
   }
 
-  // Normalize any en dash (–) or em dash (—) to simple hyphen
-  const normalized = text.replace(/[\u2012\u2013\u2014\u2212]/g, "-");
+  // 3) Relative day + am/pm range: "block 2-4pm today for Title", "block 10am-11:30am tomorrow for Title"
+  {
+    // allow "2-4pm" (inherit am/pm for end) OR full "10am-11:30am"
+    const rx = /^block\s+([\d:apm\s]+)-([\d:apm\s]+)\s+(today|tomorrow)\s+for\s+(.+)$/i;
+    const m = rx.exec(text);
+    if (m) {
+      const [, rawA, rawB, rel, title] = m;
+      const dateStr = resolveRelativeDate(rel, now);
+      if (!dateStr) throw new Error("Could not parse the date");
 
-  // Split out "... for TITLE"
-  const parts = normalized.replace(/^block\s+/i, "").split(/\s+for\s+/i);
-  if (parts.length < 2) return { ok: false, error: 'Add "for <title>" at the end' };
+      // normalize segments
+      const aAmPm = parseAmPm(rawA.trim()) || parse24h(rawA.trim());
+      let bAmPm = parseAmPm(rawB.trim()) || parse24h(rawB.trim());
 
-  const timePart = parts[0].trim();
-  const title = parts.slice(1).join(" for ").trim() || "Focus block";
+      // if end was like "4pm" and start was "2pm" or "10am" we’re fine.
+      if (!aAmPm || !bAmPm) throw new Error("Could not parse the start/end time");
 
-  // Possible forms:
-  //   "<start>-<end> <dayKeyword>"
-  //   "<date> <start>-<end>"
-  //   "<start>-<end> <date>"
-  const tokens = timePart.split(/\s+/);
-  let baseDate = null;
-  let startMin = null;
-  let endMin = null;
-
-  // Look for date token (YYYY-MM-DD) or day keyword
-  for (const t of tokens) {
-    const dkw = dateForKeyword(t);
-    if (dkw) { baseDate = dkw; break; }
-    const d = parseDateToken(t);
-    if (d) { baseDate = d; break; }
-  }
-  if (!baseDate) baseDate = dateForKeyword("today");
-
-  // Find start-end token like "9-11" or "9:00-11:30" or "2pm-3:30pm"
-  const seToken = tokens.find(t => t.includes("-"));
-  if (!seToken) return { ok: false, error: "Provide a start-end time (e.g., 9-11 or 2pm-3:30pm)" };
-
-  const [startRaw, endRaw] = seToken.split("-");
-  startMin = parseTimePiece(startRaw);
-  endMin = parseTimePiece(endRaw);
-  if (startMin == null || endMin == null) {
-    return { ok: false, error: "Could not parse the start/end time" };
-  }
-  if (endMin <= startMin) {
-    return { ok: false, error: "End time must be after start time" };
+      return {
+        title: title.trim(),
+        startISO: toLocalISO(dateStr, aAmPm),
+        endISO: toLocalISO(dateStr, bAmPm),
+      };
+    }
   }
 
-  const startDate = minutesToDate(baseDate, startMin);
-  const endDate = minutesToDate(baseDate, endMin);
-
-  const startISO = new Date(startDate.getTime()).toISOString().slice(0, 19);
-  const endISO = new Date(endDate.getTime()).toISOString().slice(0, 19);
-
-  return {
-    ok: true,
-    data: { title, startISO, endISO, timezone: tz },
-  };
+  throw new Error("Could not parse the start/end time");
 }
