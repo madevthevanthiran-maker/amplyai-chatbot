@@ -1,15 +1,12 @@
 import { useState, useEffect } from "react";
 import ChatInput from "./ChatInput";
+import MessageBubble from "./MessageBubble";
 
 /**
- * ChatPanel (polished)
- * - Loads Google tokens from /api/google/status.
- * - Routes calendar-like prompts to /api/chat (mode: 'calendar').
- * - Shows confirmation bubbles with times formatted in a fixed timezone.
- *
- * Display timezone:
- *   - Uses process.env.NEXT_PUBLIC_USER_TZ if present
- *   - Otherwise defaults to "Asia/Singapore"
+ * ChatPanel (classic layout)
+ * - EXACT SAME behavior as before (calendar routing + GPT fallback)
+ * - Only visual structure changed to resemble your older look
+ * - Centered column, roomy spacing, soft bubbles
  */
 
 const DISPLAY_TZ =
@@ -29,19 +26,21 @@ function fmtDateTime(iso, locale = "en-SG", timeZone = DISPLAY_TZ) {
       hour12: true,
     });
   } catch {
-    // If an invalid timezone is ever provided, fall back gracefully
     return new Date(iso).toLocaleString();
   }
 }
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([
+    // optional greeter; remove if you don’t want it
+    { role: "assistant", content: "Hello! How can I assist you today?" },
+  ]);
   const [tokens, setTokens] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Load Google tokens on mount from your status endpoint
+  // Load Google tokens on mount from your existing status route
   useEffect(() => {
-    async function load() {
+    (async () => {
       try {
         const res = await fetch("/api/google/status");
         const data = await res.json();
@@ -49,8 +48,7 @@ export default function ChatPanel() {
       } catch (e) {
         console.error("[ChatPanel] failed to load tokens", e);
       }
-    }
-    load();
+    })();
   }, []);
 
   function addMessage(msg) {
@@ -62,9 +60,7 @@ export default function ChatPanel() {
     setLoading(true);
 
     try {
-      const calendarLike = /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
-        text
-      );
+      const calendarLike = /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(text);
 
       if (calendarLike) {
         const res = await fetch("/api/chat", {
@@ -100,7 +96,7 @@ export default function ChatPanel() {
         return;
       }
 
-      // Default: GPT flow
+      // Default: GPT flow (unchanged)
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -117,22 +113,26 @@ export default function ChatPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0b0f1a]">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`whitespace-pre-wrap p-2 rounded max-w-[80%] ${
-              m.role === "user"
-                ? "bg-indigo-600/20 text-indigo-100 self-end"
-                : "bg-white/10 text-white self-start"
-            }`}
-          >
-            {m.content}
-          </div>
-        ))}
-        {loading && <div className="italic text-gray-400">Assistant is typing…</div>}
+    <div className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
+      {/* Top spacer matches your old header height; remove if not needed */}
+      <div className="h-4 md:h-6" />
+
+      {/* Main column */}
+      <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
+        {/* Conversation */}
+        <div className="space-y-3 pb-28">
+          {messages.map((m, i) => (
+            <MessageBubble key={i} role={m.role}>
+              {m.content}
+            </MessageBubble>
+          ))}
+          {loading && (
+            <div className="text-sm text-white/60">Assistant is typing…</div>
+          )}
+        </div>
       </div>
+
+      {/* Input (sticky bottom) */}
       <ChatInput
         onSend={handleSend}
         disabled={loading}
