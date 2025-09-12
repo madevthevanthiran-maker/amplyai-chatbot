@@ -1,12 +1,45 @@
 import { useState, useEffect } from "react";
 import ChatInput from "./ChatInput";
 
+/**
+ * ChatPanel (polished)
+ * - Loads Google tokens from /api/google/status.
+ * - Routes calendar-like prompts to /api/chat (mode: 'calendar').
+ * - Shows confirmation bubbles with times formatted in a fixed timezone.
+ *
+ * Display timezone:
+ *   - Uses process.env.NEXT_PUBLIC_USER_TZ if present
+ *   - Otherwise defaults to "Asia/Singapore"
+ */
+
+const DISPLAY_TZ =
+  process.env.NEXT_PUBLIC_USER_TZ && typeof window !== "undefined"
+    ? process.env.NEXT_PUBLIC_USER_TZ
+    : "Asia/Singapore";
+
+function fmtDateTime(iso, locale = "en-SG", timeZone = DISPLAY_TZ) {
+  try {
+    return new Date(iso).toLocaleString(locale, {
+      timeZone,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    // If an invalid timezone is ever provided, fall back gracefully
+    return new Date(iso).toLocaleString();
+  }
+}
+
 export default function ChatPanel() {
   const [messages, setMessages] = useState([]);
   const [tokens, setTokens] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Load Google tokens on mount from your existing status endpoint
+  // Load Google tokens on mount from your status endpoint
   useEffect(() => {
     async function load() {
       try {
@@ -29,7 +62,9 @@ export default function ChatPanel() {
     setLoading(true);
 
     try {
-      const calendarLike = /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(text);
+      const calendarLike = /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
+        text
+      );
 
       if (calendarLike) {
         const res = await fetch("/api/chat", {
@@ -40,22 +75,28 @@ export default function ChatPanel() {
         const data = await res.json();
 
         if (!res.ok) {
-          addMessage({ role: "assistant", content: `❌ Calendar error: ${data.message || data.error || "Not connected"}` });
+          addMessage({
+            role: "assistant",
+            content: `❌ Calendar error: ${data.message || data.error || "Not connected"}`,
+          });
+          setLoading(false);
           return;
         }
 
         if (data?.parsed) {
-          const start = new Date(data.parsed.startISO);
-          const end = new Date(data.parsed.endISO);
+          const startStr = fmtDateTime(data.parsed.startISO);
+          const endStr = fmtDateTime(data.parsed.endISO);
           addMessage({
             role: "assistant",
-            content:
-              `📅 **Created:** ${data.parsed.title}\n` +
-              `🕒 ${start.toLocaleString()} → ${end.toLocaleString()}`,
+            content: `📅 **Created:** ${data.parsed.title}\n🕒 ${startStr} → ${endStr} (${DISPLAY_TZ})`,
           });
         } else {
-          addMessage({ role: "assistant", content: "⚠️ I couldn't parse that into an event." });
+          addMessage({
+            role: "assistant",
+            content: "⚠️ I couldn't parse that into an event.",
+          });
         }
+        setLoading(false);
         return;
       }
 
