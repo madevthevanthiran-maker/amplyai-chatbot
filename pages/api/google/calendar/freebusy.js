@@ -1,10 +1,7 @@
+// /pages/api/google/calendar/freebusy.js
 import { google } from "googleapis";
 import { readGoogleTokens } from "@/lib/googleCookie";
 
-/**
- * POST { timeMin, timeMax, timeZone?, calendarId? }
- * -> { ok: true, busy: [{ start, end }] }
- */
 const FEATURE_CALENDAR =
   process.env.NEXT_PUBLIC_FEATURE_CALENDAR === undefined
     ? true
