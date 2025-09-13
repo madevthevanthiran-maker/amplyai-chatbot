@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 
 /**
- * ChatInput (controlled)
- * ---------------------
- * - Controlled by parent via `value` and `onChange`
+ * ChatInput (controlled + adjustable)
+ * -----------------------------------
+ * - Controlled by parent via `value` / `onChange`
  * - Enter to send; Shift+Enter inserts newline
- * - Parent can pass `inputRef` to focus or set selection (for presets)
+ * - Auto-grows between minRows..maxRows; also user-resizable (vertical)
+ * - Parent can pass `inputRef` (to focus or set caret)
  */
 export default function ChatInput({
   value,
@@ -14,14 +15,29 @@ export default function ChatInput({
   disabled = false,
   placeholder = 'Type a message... (e.g. “next wed 14:30 call with supplier”)',
   autoFocus = true,
-  inputRef, // optional: parent-managed ref to the <textarea>
+  inputRef,      // optional external ref to the textarea
+  minRows = 1,
+  maxRows = 8,
+  autosize = true,
 }) {
   const innerRef = useRef(null);
   const taRef = inputRef || innerRef;
 
+  // focus on mount
   useEffect(() => {
     if (autoFocus && taRef.current) taRef.current.focus();
   }, [autoFocus, taRef]);
+
+  // autosize on value change
+  useEffect(() => {
+    if (!autosize || !taRef.current) return;
+    const el = taRef.current;
+    const lineHeight = getLineHeight(el) || 20;
+    const minH = lineHeight * minRows;
+    const maxH = lineHeight * maxRows;
+    el.style.height = "auto";
+    el.style.height = Math.min(maxH, Math.max(minH, el.scrollHeight)) + "px";
+  }, [value, autosize, minRows, maxRows, taRef]);
 
   const doSend = () => {
     const text = (value || "").trim();
@@ -41,8 +57,8 @@ export default function ChatInput({
       <div className="mx-auto max-w-3xl flex gap-3 items-end">
         <textarea
           ref={taRef}
-          className="flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none text-white placeholder:text-white/40"
-          rows={1}
+          className="flex-1 resize-y rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none text-white placeholder:text-white/40"
+          rows={minRows}
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange?.(e.target.value)}
@@ -60,4 +76,12 @@ export default function ChatInput({
       </div>
     </div>
   );
+}
+
+// util: compute numeric line-height
+function getLineHeight(el) {
+  const cs = window.getComputedStyle(el);
+  const lh = cs.lineHeight;
+  if (!lh || lh === "normal") return Math.round(parseFloat(cs.fontSize) * 1.4);
+  return parseFloat(lh);
 }
