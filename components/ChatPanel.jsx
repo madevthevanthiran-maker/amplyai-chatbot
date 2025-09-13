@@ -4,10 +4,16 @@ import PresetBar from "./PresetBar";
 import presets from "./presets";
 
 /**
- * ChatPanel (fixed wiring)
- * - Preset buttons now feed directly into handleSend
- * - Uses your existing /api/chat endpoint (no changes)
- * - Enter-to-send handled by ChatInput (above)
+ * ChatPanel
+ * ----------
+ * Owns:
+ *  - The mode tabs
+ *  - EXACTLY ONE PresetBar (wired to send)
+ *  - Messages list
+ *  - Input (Enter-to-send)
+ *
+ * Safety: adds a guard so if some other parent accidentally renders a second
+ * PresetBar above or below, this panel still shows only one (no duplicates).
  */
 
 const DISPLAY_TZ =
@@ -39,7 +45,17 @@ export default function ChatPanel() {
   const [selectedMode, setSelectedMode] = useState("general");
   const [tokens, setTokens] = useState(null);
 
-  // Load Google auth status (optional, safe if not connected)
+  // Prevent duplicate preset bars: if some other preset bar exists on page,
+  // we track it and avoid rendering ours (defensive; should not happen if page is clean).
+  const [externalPresetDetected, setExternalPresetDetected] = useState(false);
+  useEffect(() => {
+    // Look for another .preset-strip outside of our own container
+    const strips = document.querySelectorAll(".preset-strip");
+    // If there is already one before we mount, mark duplicate
+    if (strips.length > 1) setExternalPresetDetected(true);
+  }, []);
+
+  // Load Google auth status (non-fatal if it fails)
   useEffect(() => {
     (async () => {
       try {
@@ -47,7 +63,7 @@ export default function ChatPanel() {
         const data = await res.json();
         if (data?.connected) setTokens(data.tokens ?? true);
       } catch {
-        // ignore
+        /* ignore */
       }
     })();
   }, []);
@@ -59,7 +75,7 @@ export default function ChatPanel() {
     setLoading(true);
 
     try {
-      // Route calendar-ish prompts to calendar mode (plus Focus tab)
+      // Calendar-ish prompts (or Focus tab)
       const isCalendarLike =
         selectedMode === "focus" ||
         /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
@@ -83,7 +99,9 @@ export default function ChatPanel() {
           const { title, startISO, endISO } = data.parsed;
           add({
             role: "assistant",
-            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})`,
+            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(
+              endISO
+            )} (${DISPLAY_TZ})`,
           });
         } else {
           add({ role: "assistant", content: "⚠️ I couldn't parse that into an event." });
@@ -102,6 +120,7 @@ export default function ChatPanel() {
       if (!res.ok) throw new Error(data.message || data.error || "Request failed");
       add({ role: "assistant", content: data.reply || "(no reply)" });
     } catch (err) {
+      console.error("[/api/chat] error", { text, err });
       add({ role: "assistant", content: `❌ ${err.message}` });
     } finally {
       setLoading(false);
@@ -110,7 +129,7 @@ export default function ChatPanel() {
 
   return (
     <div className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
-      {/* Mode chips */}
+      {/* Mode tabs */}
       <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
         {[
           ["general", "Chat (general)"],
@@ -136,14 +155,16 @@ export default function ChatPanel() {
         })}
       </div>
 
-      {/* Single preset bar; clicks call handleSend directly */}
-      <div className="mx-auto w-full max-w-3xl px-3">
-        <PresetBar
-          presets={presets[selectedMode] || []}
-          selectedMode={selectedMode}
-          onInsert={(text) => handleSend(text)}
-        />
-      </div>
+      {/* OUR single preset bar (skipped if an external duplicate is detected) */}
+      {!externalPresetDetected && (
+        <div className="mx-auto w-full max-w-3xl px-3">
+          <PresetBar
+            presets={presets[selectedMode] || []}
+            selectedMode={selectedMode}
+            onInsert={(text) => handleSend(text)}
+          />
+        </div>
+      )}
 
       {/* Messages */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
