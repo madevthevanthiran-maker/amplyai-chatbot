@@ -1,3 +1,4 @@
+// /pages/api/google/oauth/logout.js
 import { clearGoogleTokens } from "@/lib/googleCookie";
 
 export default async function handler(req, res) {
