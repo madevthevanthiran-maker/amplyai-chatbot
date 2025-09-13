@@ -1,65 +1,40 @@
-import { useRef, useState } from "react";
-import ChatBox from "@/components/ChatBox";
-import PresetBar from "@/components/PresetBar";
-import presets from "@/components/presets";
+import Head from "next/head";
+import dynamic from "next/dynamic";
 
 /**
- * Chat page (single source of truth)
- * - Renders ONE PresetBar and forwards clicks to ChatBox via refCallback.
- * - No duplicate bars; no hidden state.
+ * SINGLE chat stack page
+ * ----------------------
+ * This page renders ONE component: <ChatPanel />.
+ * ChatPanel already includes:
+ *   - Mode tabs (general / mailmate / hirehelper / planner / focus)
+ *   - One PresetBar wired to send messages
+ *   - Enter-to-send via <ChatInput /> (Shift+Enter for newline)
+ *   - Calendar routing (uses /api/chat and /api/google/*)
+ *
+ * IMPORTANT:
+ * - Remove/ignore any other chat UIs on this route to avoid double wiring.
+ * - If you previously imported ChatBox here, that’s now gone.
  */
+
+// Dynamic import avoids any SSR/browser API mismatch in ChatPanel
+const ChatPanel = dynamic(() => import("@/components/ChatPanel"), {
+  ssr: false,
+});
+
 export default function ChatPage() {
-  const [mode, setMode] = useState("general"); // "general" | "mailmate" | "hirehelper" | "planner" | "focus"
-  const sendRef = useRef(null); // ChatBox exposes a function here
-
   return (
-    <div className="min-h-screen bg-[#0b0f1a]">
-      <div className="mx-auto max-w-4xl px-4 pt-4 pb-2 flex flex-wrap gap-2 text-sm">
-        {[
-          ["general", "Chat (general)"],
-          ["mailmate", "MailMate (email)"],
-          ["hirehelper", "HireHelper (resume)"],
-          ["planner", "Planner (study/work)"],
-          ["focus", "Focus"],
-        ].map(([value, label]) => {
-          const active = mode === value;
-          return (
-            <button
-              key={value}
-              onClick={() => setMode(value)}
-              className={`px-3 py-1.5 rounded-full border ${
-                active
-                  ? "bg-indigo-600 text-white border-indigo-500"
-                  : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
+    <>
+      <Head>
+        <title>AmplyAI — Chat</title>
+        <meta name="description" content="AmplyAI assistant chat" />
+      </Head>
 
-      {/* SINGLE preset bar */}
-      <div className="mx-auto w-full max-w-4xl px-4">
-        <PresetBar
-          presets={presets[mode] || []}
-          selectedMode={mode}
-          onInsert={(text) => {
-            // Fire preset text into ChatBox
-            if (sendRef.current) sendRef.current(text);
-          }}
-        />
-      </div>
-
-      {/* ChatBox exposes its programmatic sender */}
-      <div className="mx-auto max-w-4xl px-4 pt-3 pb-8">
-        <ChatBox
-          refCallback={(fn) => {
-            sendRef.current = fn;
-          }}
-          header="General Chat"
-        />
-      </div>
-    </div>
+      {/* Background wrapper (keeps the page consistent with app styling) */}
+      <main className="min-h-screen bg-[#0b0f1a] text-white">
+        <div className="mx-auto max-w-5xl px-3 md:px-6 py-4">
+          <ChatPanel />
+        </div>
+      </main>
+    </>
   );
 }
