@@ -6,19 +6,12 @@ import Toast from "./Toast";
 import presets from "./presets";
 import parseFocus from "@/utils/parseFocus";
 
-// ✅ Read feature flag
+// ✅ Feature flag (kill switch)
 const FEATURE_CALENDAR =
   typeof process !== "undefined"
     ? process.env.NEXT_PUBLIC_FEATURE_CALENDAR !== "false"
     : true;
 
-/**
- * ChatPanel
- * ---------
- * Adds:
- *  - Calendar feature flag
- *  - Banner when calendar is disabled
- */
 const STORAGE_THREADS = "pp.threads.v1";
 const STORAGE_DRAFTS = "pp.drafts.v1";
 const STORAGE_MODE = "pp.selectedMode.v1";
@@ -60,8 +53,37 @@ const emptyThreads = () =>
   Object.fromEntries(MODES.map(([k]) => [k, defaultGreeting.slice()]));
 const emptyDrafts = () => Object.fromEntries(MODES.map(([k]) => [k, ""]));
 
+function addMinutes(date, n) {
+  return new Date(date.getTime() + n * 60_000);
+}
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+function suggestNextSlots(startISO, endISO, count = 3, stepMinutes = 30) {
+  const out = [];
+  let start = new Date(startISO);
+  let end = new Date(endISO);
+  for (let i = 0; i < count; i++) {
+    start = new Date(start.getTime() + stepMinutes * 60_000);
+    end = new Date(end.getTime() + stepMinutes * 60_000);
+    out.push([start.toISOString(), end.toISOString()]);
+  }
+  return out;
+}
+
 export default function ChatPanel() {
   const rootRef = useRef(null);
+
+  // Make the top “tabs + presets” bar sticky shadow on scroll
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 6);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const [selectedMode, setSelectedMode] = useState(() => {
     if (typeof window === "undefined") return "general";
@@ -93,19 +115,13 @@ export default function ChatPanel() {
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads));
-    } catch {}
+    try { localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads)); } catch {}
   }, [threads]);
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts));
-    } catch {}
+    try { localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts)); } catch {}
   }, [drafts]);
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_MODE, selectedMode);
-    } catch {}
+    try { localStorage.setItem(STORAGE_MODE, selectedMode); } catch {}
   }, [selectedMode]);
 
   const currentMessages = threads[selectedMode] || defaultGreeting;
@@ -114,6 +130,7 @@ export default function ChatPanel() {
   const [connected, setConnected] = useState(false);
   const [tokens, setTokens] = useState(null);
 
+  // One-time Google connection status
   useEffect(() => {
     (async () => {
       try {
@@ -132,8 +149,37 @@ export default function ChatPanel() {
     })();
   }, []);
 
-  const setDraft = (mode, text) =>
-    setDrafts((prev) => ({ ...prev, [mode]: text }));
+  // Hide any accidental duplicate preset/mode bars inserted by other components
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof document === "undefined") return;
+
+    const hideExternalUIs = () => {
+      document.querySelectorAll(".preset-strip").forEach((el) => {
+        if (!root.contains(el)) (el.closest("div") || el).style.display = "none";
+      });
+      const labels = MODES.map(([, label]) => label);
+      const btns = Array.from(document.querySelectorAll("button"));
+      const candidateRows = new Map();
+      btns.forEach((b) => {
+        const t = (b.textContent || "").trim();
+        if (labels.includes(t)) {
+          const row = b.parentElement?.closest("div");
+          if (row && !root.contains(row)) candidateRows.set(row, (candidateRows.get(row) || 0) + 1);
+        }
+      });
+      candidateRows.forEach((count, row) => {
+        if (count >= 3) row.style.display = "none";
+      });
+    };
+
+    hideExternalUIs();
+    const mo = new MutationObserver(hideExternalUIs);
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, []);
+
+  const setDraft = (mode, text) => setDrafts((prev) => ({ ...prev, [mode]: text }));
   const pushMessage = (mode, msg) =>
     setThreads((prev) => {
       const arr = prev[mode] || [];
@@ -152,16 +198,13 @@ export default function ChatPanel() {
     try {
       const isCalendarLike =
         selectedMode === "focus" ||
-        /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
-          text
-        );
+        /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(text);
 
       if (isCalendarLike) {
         if (!FEATURE_CALENDAR) {
           pushMessage(selectedMode, {
             role: "assistant",
-            content:
-              "⚠️ Calendar features are currently disabled by the admin.",
+            content: "⚠️ Calendar features are currently disabled by the admin.",
           });
           setLoading(false);
           return;
@@ -177,10 +220,84 @@ export default function ChatPanel() {
           return;
         }
 
-        // ... calendar parsing + creation logic (unchanged from previous step)
+        // Parse
+        const parsed = parseFocus(text, new Date());
+        if (!parsed || !parsed.startISO || !parsed.endISO) {
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: "⚠️ Couldn’t parse into a date/time. Try being more specific.",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Free/Busy conflict check
+        let conflict = false;
+        try {
+          const fbRes = await fetch("/api/google/calendar/freebusy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              timeMin: parsed.startISO,
+              timeMax: parsed.endISO,
+              timeZone: parsed.timezone || DISPLAY_TZ,
+            }),
+          });
+          const fb = await fbRes.json();
+          if (fbRes.ok && Array.isArray(fb?.busy) && fb.busy.length > 0) {
+            conflict = true;
+          }
+        } catch {}
+
+        if (conflict) {
+          const suggestions = suggestNextSlots(parsed.startISO, parsed.endISO, 3, 30);
+          const lines = suggestions
+            .map(([s, e]) => `• ${fmtDT(s)} → ${fmtDT(e)} (${DISPLAY_TZ})`)
+            .join("\n");
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: `⚠️ You're busy during that time.\nHere are some alternatives:\n${lines}`,
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Create via /api/chat (calendar mode)
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "calendar", message: text, tokens }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: `❌ Calendar error: ${data.message || data.error || "Not connected"}`,
+          });
+        } else if (data?.parsed) {
+          const { title, startISO, endISO, htmlLink } = data.parsed;
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})`,
+          });
+          if (htmlLink) {
+            setToast({
+              message: `Event “${title}” created successfully.`,
+              link: { href: htmlLink, label: "Open in Calendar" },
+            });
+          }
+        } else {
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: "⚠️ I couldn't parse that into an event.",
+          });
+        }
+        setLoading(false);
+        return;
       }
 
-      // normal chat fallback
+      // Normal chat fallback
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -188,57 +305,77 @@ export default function ChatPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || data.error || "Request failed");
-      pushMessage(selectedMode, {
-        role: "assistant",
-        content: data.reply || "(no reply)",
-      });
+      pushMessage(selectedMode, { role: "assistant", content: data.reply || "(no reply)" });
     } catch (err) {
       console.error("[/api/chat] error", { text, err });
-      pushMessage(selectedMode, {
-        role: "assistant",
-        content: `❌ ${err.message}`,
-      });
+      pushMessage(selectedMode, { role: "assistant", content: `❌ ${err.message}` });
     } finally {
       setLoading(false);
       inputRef.current?.focus();
     }
   };
 
+  const handlePresetClick = (text) => {
+    const t = text ?? "";
+    setDraft(selectedMode, t);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      try {
+        const len = t.length;
+        el.setSelectionRange?.(len, len);
+      } catch {}
+    });
+  };
+
+  const startConnect = () => {
+    const returnTo = typeof window !== "undefined" ? window.location.pathname : "/chat";
+    const url = `/api/google/oauth/start?returnTo=${encodeURIComponent(returnTo)}`;
+    window.location.href = url;
+  };
+
   return (
-    <div
-      ref={rootRef}
-      className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]"
-    >
-      <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
-        {MODES.map(([value, label]) => {
-          const active = selectedMode === value;
-          return (
-            <button
-              key={value}
-              onClick={() => setSelectedMode(value)}
-              className={`px-3 py-1.5 rounded-full border ${
-                active
-                  ? "bg-indigo-600 text-white border-indigo-500"
-                  : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
+    <div ref={rootRef} className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
+      {/* 🔝 Sticky header: modes + preset bar */}
+      <div
+        className={[
+          "sticky top-0 z-40",
+          "bg-[#0b0f1a]/90 backdrop-blur-md border-b border-white/10",
+          scrolled ? "shadow-[0_6px_16px_rgba(0,0,0,0.35)]" : "shadow-none",
+        ].join(" ")}
+      >
+        <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
+          {MODES.map(([value, label]) => {
+            const active = selectedMode === value;
+            return (
+              <button
+                key={value}
+                onClick={() => setSelectedMode(value)}
+                className={`px-3 py-1.5 rounded-full border ${
+                  active
+                    ? "bg-indigo-600 text-white border-indigo-500"
+                    : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mx-auto w-full max-w-3xl px-3 pb-2">
+          <PresetBar
+            presets={presets[selectedMode] || []}
+            selectedMode={selectedMode}
+            onInsert={handlePresetClick}
+          />
+        </div>
       </div>
 
-      <div className="mx-auto w-full max-w-3xl px-3">
-        <PresetBar
-          presets={presets[selectedMode] || []}
-          selectedMode={selectedMode}
-          onInsert={(t) => setDraft(selectedMode, t)}
-        />
-      </div>
-
+      {/* Messages + system banners */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
-        <div className="space-y-3 pb-24">
-          {currentMessages.map((m, i) => (
+        <div className="space-y-3 pb-24 pt-3">
+          {(currentMessages || defaultGreeting).map((m, i) => (
             <div
               key={i}
               className={`whitespace-pre-wrap leading-relaxed rounded-2xl px-4 py-3 border ${
@@ -250,9 +387,7 @@ export default function ChatPanel() {
               {m.content}
             </div>
           ))}
-          {loading && (
-            <div className="text-sm text-white/60">Assistant is typing…</div>
-          )}
+          {loading && <div className="text-sm text-white/60">Assistant is typing…</div>}
 
           {!FEATURE_CALENDAR && (
             <div className="rounded-md bg-yellow-500/10 border border-yellow-500/30 text-yellow-200 px-3 py-2 text-sm">
@@ -262,15 +397,7 @@ export default function ChatPanel() {
 
           {FEATURE_CALENDAR && !connected && (
             <ConnectGoogleBanner
-              onConnect={() => {
-                const returnTo =
-                  typeof window !== "undefined"
-                    ? window.location.pathname
-                    : "/chat";
-                window.location.href = `/api/google/oauth/start?returnTo=${encodeURIComponent(
-                  returnTo
-                )}`;
-              }}
+              onConnect={startConnect}
               className="mt-2"
               message="Connect Google Calendar to create meetings and time blocks directly from the Focus tab or any calendar-like prompt."
             />
@@ -278,6 +405,7 @@ export default function ChatPanel() {
         </div>
       </div>
 
+      {/* Input */}
       <ChatInput
         value={currentDraft}
         onChange={(v) => setDraft(selectedMode, v)}
@@ -289,12 +417,9 @@ export default function ChatPanel() {
         autosize
       />
 
+      {/* Toast (e.g., Open in Calendar) */}
       {toast && (
-        <Toast
-          message={toast.message}
-          link={toast.link}
-          onClose={() => setToast(null)}
-        />
+        <Toast message={toast.message} link={toast.link} onClose={() => setToast(null)} />
       )}
     </div>
   );
