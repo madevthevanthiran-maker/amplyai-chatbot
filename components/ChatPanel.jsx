@@ -4,12 +4,19 @@ import PresetBar from "./PresetBar";
 import presets from "./presets";
 
 /**
- * ChatPanel (single-stack with editable presets)
- * ---------------------------------------------
- * Changes:
- * - Preset clicks now **prefill the input** (do NOT auto-send).
- * - We focus the textarea and move the caret to the end so the user can tweak.
- * - Press Enter or click Send to submit.
+ * ChatPanel (single-stack with editable presets + duplicate killer 2.0)
+ * -------------------------------------------------------------------
+ * Owns:
+ *  - Mode tabs
+ *  - EXACTLY ONE PresetBar (wired to prefill input)
+ *  - Messages list
+ *  - Input (Enter-to-send, Shift+Enter newline)
+ *
+ * NEW:
+ *  - Robust duplicate remover using MutationObserver.
+ *    If any external layout renders an extra tab row or preset bar
+ *    *before or after* this component mounts, we hide it safely by
+ *    applying `style.display = 'none'` to the out-of-root nodes.
  */
 
 const DISPLAY_TZ =
@@ -34,6 +41,8 @@ function fmtDT(iso, locale = "en-US", timeZone = DISPLAY_TZ) {
 }
 
 export default function ChatPanel() {
+  const rootRef = useRef(null);
+
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hello! How can I assist you today?" },
   ]);
@@ -41,9 +50,62 @@ export default function ChatPanel() {
   const [selectedMode, setSelectedMode] = useState("general");
   const [tokens, setTokens] = useState(null);
 
-  // NEW: draft input (controlled) + ref so we can focus after preset click
+  // Controlled draft + ref so presets can prefill + focus cursor at end
   const [draft, setDraft] = useState("");
   const inputRef = useRef(null);
+
+  // --- Duplicate killer (MutationObserver) ---
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof document === "undefined") return;
+
+    const hideExternalUIs = () => {
+      // Hide any preset strips NOT contained inside our root
+      const strips = Array.from(document.querySelectorAll(".preset-strip"));
+      strips.forEach((el) => {
+        if (!root.contains(el)) {
+          const row = el.closest("div");
+          (row || el).style.display = "none";
+          (row || el).dataset.ppHiddenByChat = "1";
+        }
+      });
+
+      // Hide any top mode-tab rows NOT inside our root.
+      const labels = [
+        "Chat (general)",
+        "MailMate (email)",
+        "HireHelper (resume)",
+        "Planner (study/work)",
+        "Focus",
+      ];
+      const btns = Array.from(document.querySelectorAll("button"));
+      const candidateRows = new Map(); // rowEl -> count
+      btns.forEach((b) => {
+        const t = (b.textContent || "").trim();
+        if (labels.includes(t)) {
+          const row = b.parentElement?.closest("div");
+          if (row && !root.contains(row)) {
+            candidateRows.set(row, (candidateRows.get(row) || 0) + 1);
+          }
+        }
+      });
+      candidateRows.forEach((count, row) => {
+        if (count >= 3) {
+          row.style.display = "none";
+          row.dataset.ppHiddenByChat = "1";
+        }
+      });
+    };
+
+    // Run immediately
+    hideExternalUIs();
+
+    // Observe future DOM changes (e.g., layout renders after us)
+    const mo = new MutationObserver(() => hideExternalUIs());
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    return () => mo.disconnect();
+  }, []);
 
   // Load Google auth status (non-fatal if it fails)
   useEffect(() => {
@@ -62,7 +124,7 @@ export default function ChatPanel() {
 
   const handleSend = async (text) => {
     add({ role: "user", content: text });
-    setDraft(""); // clear the input after we take the current value
+    setDraft(""); // clear input after capture
     setLoading(true);
 
     try {
@@ -114,30 +176,27 @@ export default function ChatPanel() {
       add({ role: "assistant", content: `❌ ${err.message}` });
     } finally {
       setLoading(false);
-      // refocus input for faster follow-ups
       if (inputRef.current) inputRef.current.focus();
     }
   };
 
-  // Fill input with preset text (do not send), focus, and move caret to end
+  // Prefill input from preset, focus, caret at end
   const handlePresetClick = (text) => {
     const t = text ?? "";
     setDraft(t);
     requestAnimationFrame(() => {
-      if (inputRef.current) {
-        const el = inputRef.current;
-        el.focus();
-        // place caret at end
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      try {
         const len = t.length;
-        try {
-          el.setSelectionRange?.(len, len);
-        } catch {}
-      }
+        el.setSelectionRange?.(len, len);
+      } catch {}
     });
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
+    <div ref={rootRef} className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
       {/* Mode tabs */}
       <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
         {[
@@ -164,7 +223,7 @@ export default function ChatPanel() {
         })}
       </div>
 
-      {/* Single preset bar — now fills the input instead of sending */}
+      {/* Single preset bar — fills input (does not auto-send) */}
       <div className="mx-auto w-full max-w-3xl px-3">
         <PresetBar
           presets={presets[selectedMode] || []}
@@ -192,7 +251,7 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* Controlled input: Enter-to-send, Shift+Enter for newline */}
+      {/* Controlled input: Enter-to-send, Shift+Enter newline */}
       <ChatInput
         value={draft}
         onChange={setDraft}
