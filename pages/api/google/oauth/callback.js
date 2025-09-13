@@ -1,16 +1,15 @@
+// /pages/api/google/oauth/callback.js
 import { google } from "googleapis";
 import { writeGoogleTokens } from "@/lib/googleCookie";
 
 export default async function handler(req, res) {
   try {
     const code = req.query.code;
-    const returnTo = req.query.state
-      ? decodeURIComponent(req.query.state)
-      : "/chat";
+    const returnTo = req.query.state ? decodeURIComponent(req.query.state) : "/settings";
 
     if (!code) {
-      // user cancelled?
-      return res.redirect(`${returnTo}?gcb=cancelled`);
+      const sep = returnTo.includes("?") ? "&" : "?";
+      return res.redirect(`${returnTo}${sep}gcb=cancelled`);
     }
 
     const client = new google.auth.OAuth2(
@@ -20,15 +19,11 @@ export default async function handler(req, res) {
     );
 
     const { tokens } = await client.getToken(code);
-    // Persist tokens in our standardized cookie
     writeGoogleTokens(res, tokens);
 
-    // Cache-buster so the UI refetches /api/google/status immediately
-    const bust = `gcb=${Date.now()}`;
     const sep = returnTo.includes("?") ? "&" : "?";
-    return res.redirect(`${returnTo}${sep}${bust}`);
+    return res.redirect(`${returnTo}${sep}gcb=${Date.now()}`);
   } catch (e) {
-    // Best-effort safe redirect with error info stripped
     const fallback = "/settings";
     const sep = fallback.includes("?") ? "&" : "?";
     return res.redirect(`${fallback}${sep}gerr=1`);
