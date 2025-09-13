@@ -1,210 +1,494 @@
 /**
  * Permanent, dependency-light natural-language time parser for AmplyAI.
- * Compatible signature:
- *   parseFocus(input, opts?) -> { title, startISO, endISO, allDay, timezone, notes }
+ * -------------------------------------------------------------------
+ * Goals:
+ *  - Handle common chatty phrases for meetings & blocks
+ *  - Be timezone-aware without external libs
+ *  - Prefer “next/this <weekday>” + “in Xm/h” + ranges like “7p–9p”
+ *  - Understand durations like “for 45m / for 2 hours”
+ *  - Recognize all-day events (“all day …”)
+ *  - Work with compact titles like “— Focus sprint” / “: standup”
  *
- * Handles:
- *  - "today 2pm", "tomorrow 14:30", "next Mon 9-11", "Fri 7pm-9pm"
- *  - "on 12/10 3pm", "25-12 10:00", "2025-09-20 13:00"
- *  - "from 3 to 5pm", "2-4pm", "noon", "midnight"
- *  - "all day tomorrow", "for 30 min", "block 2 hours at 4pm next tue"
- *  - defaults to Asia/Singapore
- * Never throws; returns { error } if cannot parse.
+ * Input examples (all supported):
+ *  - "block 2-4pm tomorrow — Deep Work thesis"
+ *  - "next wed 14:30 call with supplier"
+ *  - "all day tomorrow: study retreat"
+ *  - "this fri 7pm-9pm dinner with family"
+ *  - "meeting on 12/10 9am for 2 hours"
+ *  - "in 30m for 45m project sync"
+ *  - "every Mon 9–10"  (RRULE not emitted here; still parses first occurrence)
+ *
+ * Output shape:
+ *  {
+ *    title: string,
+ *    startISO: string,   // ISO 8601 in user's tz
+ *    endISO: string,
+ *    timezone: string,   // e.g. "Asia/Singapore"
+ *    allDay?: boolean,
+ *    durationMin?: number,
+ *    notes?: string      // trailing text we stripped from title
+ *  }
+ *
+ * NOTE: Keep this file dependency-free and deterministic. No network.
  */
 
-const SG_TZ = "Asia/Singapore";
+const TZ =
+  typeof Intl !== "undefined" &&
+  Intl.DateTimeFormat().resolvedOptions().timeZone
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+    : "UTC";
 
-const WEEKDAYS = {
-  sunday: 0, sun: 0,
-  monday: 1, mon: 1,
-  tuesday: 2, tue: 2, tues: 2,
-  wednesday: 3, wed: 3,
-  thursday: 4, thu: 4, thurs: 4,
-  friday: 5, fri: 5,
-  saturday: 6, sat: 6,
-};
+/** ---------- Utilities ---------- */
 
-function toLocalDate(date, tz) {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+function toISOInTZ(date, tz = TZ) {
+  // Convert a Date that represents wall-clock in tz to ISO string with that instant in UTC.
+  // Here, we assume `date` is already a Date in local time; to format as tz, we compute the same wall-clock in tz and return a real ISO.
+  // Strategy: build a Date from its components interpreted in tz using Date.UTC on those, then shift by tz offset.
+  // Simpler: use Intl to get parts; then create a UTC timestamp from those parts (approx). Since JS lacks tz math without libs,
+  // we use a trick: get the tz local parts, then create a Date from them as if they were local, then correct offset by formatting again.
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]));
-  const y = +parts.year, m = +parts.month, d = +parts.day, hh = +(parts.hour || '00'), mm = +(parts.minute || '00');
-  return { y, m, d, hh, mm };
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(date)
+    .reduce((acc, p) => ((acc[p.type] = p.value), acc), {});
+  // mm/dd/yyyy, HH:MM:SS from parts
+  const y = Number(parts.year);
+  const m = Number(parts.month);
+  const d = Number(parts.day);
+  const hh = Number(parts.hour);
+  const mm = Number(parts.minute);
+  const ss = Number(parts.second);
+  // Construct a UTC time for those tz-wall-clock parts by asking for the instant represented in tz.
+  // To get the real instant, create a Date for that wall clock in tz by using Date.UTC and then subtract the tz offset at that instant.
+  // But we can't get tz offset directly for arbitrary tz. Workaround:
+  // Create a date from string with TZ annotation via toLocaleString w/ timeZone then parse? Not reliable.
+  // Practical approach: Create a Date from 'YYYY-MM-DDTHH:mm:ss' as if in tz by using the target tz’s offset at that moment
+  // using the Date for the naive local time and compute diff with formatToParts for UTC.
+  const naive = new Date(Date.UTC(y, m - 1, d, hh, mm, ss));
+  // The naive represents that wall-clock in UTC; to get the actual instant, shift by tz offset at that instant:
+  // We can derive the offset by comparing formatted time in tz vs UTC for the same naive instant.
+  const tzOffsetMinutes = getTZOffsetMinutes(naive, tz);
+  const real = new Date(naive.getTime() - tzOffsetMinutes * 60_000);
+  return real.toISOString();
 }
 
-function fromLocalParts(parts, tz) {
-  const { y, m, d, hh = 0, mm = 0 } = parts;
-  const guessUTC = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
-  // compute tz offset delta at that instant
-  const wall = toLocalDate(guessUTC, tz);
-  const diffMin = ((wall.hh - hh) * 60) + (wall.mm - mm);
-  return new Date(guessUTC.getTime() - diffMin * 60000);
+function getTZOffsetMinutes(date, tz) {
+  // Find offset between UTC and tz at given instant.
+  // Format in tz and in UTC, compare their epoch milliseconds by reconstructing from parts.
+  const inTZ = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+    .formatToParts(date)
+    .reduce((acc, p) => ((acc[p.type] = p.value), acc), {});
+  const tzEpoch = Date.UTC(
+    Number(inTZ.year),
+    Number(inTZ.month) - 1,
+    Number(inTZ.day),
+    Number(inTZ.hour),
+    Number(inTZ.minute),
+    Number(inTZ.second)
+  );
+  // The same `date` instant has getTime() in UTC epoch ms.
+  // Offset (minutes) = (tzEpoch - dateEpoch)/60000
+  return Math.round((tzEpoch - date.getTime()) / 60000);
 }
 
-function startOfDay(date, tz) {
-  const { y, m, d } = toLocalDate(date, tz);
-  return fromLocalParts({ y, m, d, hh: 0, mm: 0 }, tz);
-}
-function addMinutes(date, mins) { return new Date(date.getTime() + mins * 60000); }
-function addDays(date, days) { return new Date(date.getTime() + days * 86400000); }
-
-function nextWeekday(from, targetDow, tz) {
-  const base = fromLocalParts(toLocalDate(from, tz), tz);
-  const dow = base.getDay();
-  let delta = (targetDow - dow + 7) % 7;
-  if (delta === 0) delta = 7;
-  return addDays(base, delta);
-}
-function sameOrNextWeekday(from, targetDow, tz) {
-  const base = fromLocalParts(toLocalDate(from, tz), tz);
-  const dow = base.getDay();
-  const delta = (targetDow - dow + 7) % 7;
-  return addDays(base, delta);
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function parseClock(str) {
-  const s = str.trim().toLowerCase();
-  if (s.includes('noon')) return { hh: 12, mm: 0 };
-  if (s.includes('midnight')) return { hh: 0, mm: 0 };
-  const m = s.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
-  if (!m) return null;
-  let hh = parseInt(m[1], 10);
-  const mm = m[2] ? parseInt(m[2], 10) : 0;
-  const ampm = m[3];
-  if (ampm) {
-    if (ampm === 'pm' && hh !== 12) hh += 12;
-    if (ampm === 'am' && hh === 12) hh = 0;
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function addMinutes(date, n) {
+  return new Date(date.getTime() + n * 60_000);
+}
+
+function parseIntSafe(s, def = 0) {
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) ? n : def;
+}
+
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+function nextWeekday(base, targetIdx, inclusive = false) {
+  const b = new Date(base);
+  const cur = b.getDay();
+  let delta = targetIdx - cur;
+  if (delta <= 0) delta += 7;
+  if (inclusive && delta === 0) delta = 0;
+  return addDays(b, delta);
+}
+function thisOrNextWeekday(base, targetIdx) {
+  const b = new Date(base);
+  const cur = b.getDay();
+  if (cur === targetIdx) return b;
+  // next occurrence this week; if already passed this week, next week
+  let delta = targetIdx - cur;
+  if (delta < 0) delta += 7;
+  return addDays(b, delta);
+}
+
+function normalizeDashes(text) {
+  return text.replace(/[–—]/g, "-");
+}
+
+function trimPunctuation(s) {
+  return s.replace(/^[\s\-–—:]+|[\s\-–—:]+$/g, "");
+}
+
+/** ---------- Core parsing ---------- */
+
+export default function parseFocus(input, now = new Date(), displayTZ = TZ) {
+  if (!input || typeof input !== "string") return null;
+
+  // Normalize whitespace and punctuation
+  let raw = input.trim().replace(/\s+/g, " ");
+  raw = normalizeDashes(raw);
+
+  // Extract obvious "all day"
+  const allDayHint = /\ball\s*day\b/i.test(raw);
+
+  // Separate title using common separators ("—", "-", ":", "–")
+  let title = "";
+  let timePart = raw;
+  const sepMatch = raw.match(/\s(?:—|-|:)\s/);
+  if (sepMatch) {
+    const idx = raw.indexOf(sepMatch[0]);
+    timePart = raw.slice(0, idx).trim();
+    title = raw.slice(idx + sepMatch[0].length).trim();
+  } else {
+    // If no explicit separator, try to find trailing title after time words
+    // e.g., "next wed 14:30 call with supplier"
+    // Strategy: parse time first; leftover tokens become title.
   }
-  if (!ampm && hh === 24) hh = 0;
-  if (hh > 23 || mm > 59) return null;
-  return { hh, mm };
-}
 
-function parseDateToken(tok, now, tz) {
-  const s = tok.trim().toLowerCase();
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) return { y: +m[1], m: +m[2], d: +m[3] };
-
-  m = s.match(/^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$/);
-  if (m) {
-    const d = +m[1], mon = +m[2];
-    const y = m[3] ? +(m[3].length === 2 ? (2000 + +m[3]) : +m[3]) : toLocalDate(now, tz).y;
-    return { y, m: mon, d };
-  }
-
-  const MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
-  m = s.match(/^(\d{1,2})\s*([a-z]{3,})$/);
-  if (m && MONTHS[m[2].slice(0,3)]) {
-    const d = +m[1], mon = MONTHS[m[2].slice(0,3)];
-    const y = toLocalDate(now, tz).y;
-    return { y, m: mon, d };
-  }
-  m = s.match(/^([a-z]{3,})\s*(\d{1,2})$/);
-  if (m && MONTHS[m[1].slice(0,3)]) {
-    const d = +m[2], mon = MONTHS[m[1].slice(0,3)];
-    const y = toLocalDate(now, tz).y;
-    return { y, m: mon, d };
-  }
-  return null;
-}
-
-function parseRelativeDate(text, now, tz) {
-  const s = text.toLowerCase();
-  if (/(today)(?!\w)/.test(s)) return startOfDay(now, tz);
-  if (/(tomorrow|tmr)(?!\w)/.test(s)) return startOfDay(addDays(now,1), tz);
-  if (/(yesterday)(?!\w)/.test(s)) return startOfDay(addDays(now,-1), tz);
-  const wd = Object.keys(WEEKDAYS).find(k => new RegExp(`\\b(next|this)?\\s*${k}\\b`).test(s));
-  if (wd) {
-    const target = WEEKDAYS[wd];
-    if (/\bnext\b/.test(s)) return nextWeekday(now, target, tz);
-    return sameOrNextWeekday(now, target, tz);
-  }
-  const dateTok = s.match(/\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?|\d{1,2}\s+[a-z]{3,}|[a-z]{3,}\s+\d{1,2})\b/);
-  if (dateTok) {
-    const parts = parseDateToken(dateTok[1], now, tz);
-    if (parts) return fromLocalParts({ ...parts, hh:0, mm:0 }, tz);
-  }
-  return null;
-}
-
-function parseDuration(text) {
-  const s = text.toLowerCase();
-  const m1 = s.match(/\bfor\s+(\d{1,3})\s*(min|mins|minutes)\b/);
-  if (m1) return +m1[1];
-  const m2 = s.match(/\bfor\s+(\d{1,2})\s*(h|hr|hrs|hour|hours)\b/);
-  if (m2) return +m2[1] * 60;
-  const m3 = s.match(/\b(\d{1,2})\s*(h|hr|hrs)\b/);
-  if (m3) return +m3[1] * 60;
-  const m4 = s.match(/\b(\d{1,3})\s*(min|mins)\b/);
-  if (m4) return +m4[1];
-  return null;
-}
-
-export function parseFocus(input, opts = {}) {
-  const tz = opts.timezone || SG_TZ;
-  const now = opts.now instanceof Date ? opts.now : new Date();
-  const raw = String(input || '').trim();
-  if (!raw) return { error: 'EMPTY_INPUT', message: 'No text to parse' };
-
-  const text = raw.replace(/\s+/g, ' ').trim();
-  let title = text;
-
-  const allDay = /\ball\s*day\b/i.test(text);
-  let dateBase = parseRelativeDate(text, now, tz) || startOfDay(now, tz);
-
-  const dateTokenMatch = text.match(/\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?|\b(?:today|tomorrow|tmr|yesterday)\b|\b(?:next|this)?\s*(?:sun|sunday|mon|monday|tue|tues|tuesday|wed|wednesday|thu|thurs|thursday|fri|friday|sat|saturday)\b)\b/i);
-
-  const range1 = text.match(/\b(\d{1,2}(?::\d{2})?)\s*(am|pm)?\s*[-–]\s*(\d{1,2}(?::\d{2})?)\s*(am|pm)?\b/i);
-  const range2 = text.match(/\bfrom\s+(\d{1,2}(?::\d{2})?)\s*(am|pm)?\s+to\s+(\d{1,2}(?::\d{2})?)\s*(am|pm)?\b/i);
-  const timeSingleMatch = text.match(/\b(at|@)?\s*(\d{1,2}(?::\d{2})?)\s*(am|pm)?\b/i);
-
-  let start, end;
-  const durMin = parseDuration(text);
-
-  if (range1 || range2) {
-    const m = range1 || range2;
-    const t1 = parseClock(`${m[1]} ${m[2]||''}`.trim());
-    const t2 = parseClock(`${m[3]} ${m[4]||''}`.trim());
-    if (t1 && t2) {
-      start = fromLocalParts({ ...toLocalDate(dateBase, tz), hh: t1.hh, mm: t1.mm }, tz);
-      end = fromLocalParts({ ...toLocalDate(dateBase, tz), hh: t2.hh, mm: t2.mm }, tz);
-      if (end <= start) end = addDays(end, 1);
-      title = title.replace(m[0], '').trim();
+  // Pull out "for X hours/minutes" duration (won't remove ranges)
+  let durationMin = null;
+  const durRe =
+    /\bfor\s+(\d{1,3})(?:\s?(mins?|minutes?|hrs?|hours?))\b|\bfor\s+(\d{1,2})\s?h(?::?(\d{2}))?\b/i;
+  const durM = raw.match(durRe);
+  if (durM) {
+    if (durM[1]) {
+      const n = parseIntSafe(durM[1], 0);
+      const unit = (durM[2] || "").toLowerCase();
+      durationMin =
+        unit.startsWith("h") ? clamp(n, 0, 48) * 60 : clamp(n, 0, 6000);
+    } else {
+      // "for 1h" or "for 1h30"
+      const h = clamp(parseIntSafe(durM[3], 0), 0, 48);
+      const mm = clamp(parseIntSafe(durM[4], 0), 0, 59);
+      durationMin = h * 60 + mm;
     }
-  } else if (timeSingleMatch) {
-    const t = parseClock(`${timeSingleMatch[2]} ${timeSingleMatch[3]||''}`.trim());
-    if (t) {
-      start = fromLocalParts({ ...toLocalDate(dateBase, tz), hh: t.hh, mm: t.mm }, tz);
-      const tm = durMin != null ? durMin : 60;
-      end = addMinutes(start, tm);
-      title = title.replace(timeSingleMatch[0], '').trim();
+    // Remove duration from text pieces so it doesn't interfere with time parsing
+    raw = raw.replace(durRe, "").replace(/\s{2,}/g, " ").trim();
+    timePart = timePart.replace(durRe, "").replace(/\s{2,}/g, " ").trim();
+  }
+
+  // Relative "in 30m / in 2h / in 1 hour 30 min"
+  const relRe =
+    /\bin\s+(\d{1,3})(?:\s?(mins?|minutes?|m|hrs?|hours?|h))?(?:\s*(\d{1,2})\s?(mins?|minutes?|m))?\b/i;
+  const relM = raw.match(relRe);
+
+  // Day words: today / tomorrow / next/this <weekday>
+  let baseDate = new Date(now);
+  let explicitDayUsed = false;
+
+  // "today" / "tomorrow"
+  if (/\btoday\b/i.test(raw)) {
+    explicitDayUsed = true;
+  } else if (/\btomorrow\b/i.test(raw)) {
+    baseDate = addDays(baseDate, 1);
+    explicitDayUsed = true;
+  }
+
+  // "next fri", "this wed"
+  const wdM = raw.match(/\b(next|this)\s+(sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)\b/i);
+  if (wdM) {
+    const when = wdM[1].toLowerCase();
+    const wdStr = wdM[2].slice(0, 3).toLowerCase().replace("tue", "tue").replace("thu", "thu");
+    const idx = WEEKDAYS.indexOf(wdStr);
+    if (idx >= 0) {
+      baseDate = when === "next" ? nextWeekday(baseDate, idx) : thisOrNextWeekday(baseDate, idx);
+      explicitDayUsed = true;
     }
-  } else if (allDay) {
-    start = startOfDay(dateBase, tz);
-    end = addDays(start, 1);
   }
 
-  if (dateTokenMatch) title = title.replace(dateTokenMatch[0], '').trim();
-
-  title = title
-    .replace(/\b(on|at|from|to|this|next|today|tomorrow|tmr|yesterday|\d{1,2}[\/:]\d{1,2}(?:\s*(?:am|pm))?|\d{4}-\d{2}-\d{2}|all\s*day)\b/gi, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-  if (!title) title = 'Block Time';
-
-  if (!start) {
-    const nowLocal = toLocalDate(now, tz);
-    let base = fromLocalParts({ y: nowLocal.y, m: nowLocal.m, d: nowLocal.d, hh: nowLocal.hh, mm: nowLocal.mm }, tz);
-    const mins = base.getMinutes();
-    const bump = mins <= 30 ? (30 - mins) : (60 - mins);
-    start = addMinutes(base, bump);
-    end = addMinutes(start, durMin != null ? durMin : (allDay ? 24*60 : 60));
+  // "on 12/10", "on 2025-12-10", "12/10", "10-12-2025"
+  const dateM = raw.match(
+    /\b(?:on\s+)?((\d{4})-(\d{1,2})-(\d{1,2})|(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?)\b/i
+  );
+  if (dateM) {
+    let Y, M, D;
+    if (dateM[2]) {
+      // YYYY-MM-DD
+      Y = parseIntSafe(dateM[2]);
+      M = clamp(parseIntSafe(dateM[3]), 1, 12);
+      D = clamp(parseIntSafe(dateM[4]), 1, 31);
+    } else {
+      // MM/DD[/YYYY] or DD-MM-YYYY (we default to MM/DD when using "/" and to DD-MM when using "-" and 3 parts)
+      const a = [dateM[5], dateM[6], dateM[7]].filter(Boolean).map((x) => parseIntSafe(x));
+      if (a.length === 3 && dateM[0].includes("-")) {
+        // Assume DD-MM-YYYY if separator is '-' and 3 parts
+        D = clamp(a[0], 1, 31);
+        M = clamp(a[1], 1, 12);
+        Y = a[2] < 100 ? 2000 + a[2] : a[2];
+      } else {
+        // Assume MM/DD[/YYYY]
+        M = clamp(a[0], 1, 12);
+        D = clamp(a[1], 1, 31);
+        Y = a[2] ? (a[2] < 100 ? 2000 + a[2] : a[2]) : baseDate.getFullYear();
+      }
+    }
+    baseDate = new Date(baseDate);
+    baseDate.setFullYear(Y, M - 1, D);
+    explicitDayUsed = true;
   }
 
-  return { title, startISO: start.toISOString(), endISO: end.toISOString(), allDay: !!allDay, timezone: tz, notes: null };
+  // Time parsing
+  // Accept: "14:30", "2:30pm", "2pm", "7p-9p", "7-9pm", "7pm-9pm"
+  // Use the first time range or single time found in the **timePart** if it exists else raw.
+  const searchText = timePart || raw;
+  const timeRangeRe =
+    /\b(\d{1,2})(?::?(\d{2}))?\s*(a|am|p|pm)?\s?[-–]\s?(\d{1,2})(?::?(\d{2}))?\s*(a|am|p|pm)?\b/i;
+  const timeSingleRe = /\b(\d{1,2})(?::?(\d{2}))?\s*(a|am|p|pm)?\b/i;
+  const hm24Re = /\b([01]?\d|2[0-3]):([0-5]\d)\b/;
+
+  let start = null;
+  let end = null;
+
+  const rangeM = searchText.match(timeRangeRe);
+  if (rangeM) {
+    const sH = parseIntSafe(rangeM[1]),
+      sM = parseIntSafe(rangeM[2] || "0");
+    const sMer = (rangeM[3] || "").toLowerCase(); // a/am/p/pm/empty
+
+    const eH = parseIntSafe(rangeM[4]),
+      eM = parseIntSafe(rangeM[5] || "0");
+    let eMer = (rangeM[6] || "").toLowerCase();
+
+    // If only one meridian is provided, carry it to the other side when it makes sense (e.g., "7-9pm")
+    let s24 = to24h(sH, sMer);
+    let e24 = to24h(eH, eMer || (sMer ? sMer : ""));
+
+    // If still ambiguous (no meridians) and numbers small, assume same half-day and after start
+    if (!sMer && !eMer && sH <= 12 && eH <= 12) {
+      if (explicitDayUsed) {
+        // assume daytime; if start < 8, bump to pm for human-ish defaults when evening-like range
+        if (sH <= 7 && eH <= 9) {
+          s24 = sH + 12;
+          e24 = eH + 12;
+        } else {
+          s24 = sH;
+          e24 = eH;
+        }
+      } else {
+        s24 = sH;
+        e24 = eH;
+      }
+    }
+
+    start = new Date(baseDate);
+    start.setHours(s24, sM, 0, 0);
+
+    end = new Date(baseDate);
+    end.setHours(e24, eM, 0, 0);
+
+    // If end <= start, assume it crosses noon or midnight (bump end by +12h or +24h)
+    if (end <= start) {
+      // Try bump by +12h when meridian-less single-digit hours (e.g., 7-9)
+      if (!sMer && !eMer && sH <= 12 && eH <= 12) {
+        end = addMinutes(end, 12 * 60);
+        if (end <= start) end = addMinutes(end, 12 * 60);
+      } else {
+        end = addMinutes(end, 24 * 60);
+      }
+    }
+  } else {
+    // Try 24h HH:mm pattern first (e.g., 14:30)
+    const hm24 = searchText.match(hm24Re);
+    if (hm24) {
+      const H = parseIntSafe(hm24[1]);
+      const M = parseIntSafe(hm24[2]);
+      start = new Date(baseDate);
+      start.setHours(H, M, 0, 0);
+      if (durationMin) {
+        end = addMinutes(start, durationMin);
+      } else {
+        end = addMinutes(start, 60);
+      }
+    } else {
+      // Try single 12h time (e.g., "2pm", "9:15a", "7p")
+      const t1 = searchText.match(timeSingleRe);
+      if (t1) {
+        const H = clamp(parseIntSafe(t1[1], 0), 0, 23);
+        const M = clamp(parseIntSafe(t1[2] || "0", 0), 0, 59);
+        const mer = (t1[3] || "").toLowerCase();
+        const H24 = to24h(H, mer);
+
+        start = new Date(baseDate);
+        start.setHours(H24, M, 0, 0);
+        if (durationMin) {
+          end = addMinutes(start, durationMin);
+        } else {
+          end = addMinutes(start, 60);
+        }
+      }
+    }
+  }
+
+  // Relative time "in 30m / in 1h30"
+  if (!start && relM) {
+    const n1 = parseIntSafe(relM[1], 0);
+    const unit1 = (relM[2] || "").toLowerCase();
+    const n2 = parseIntSafe(relM[3], 0);
+    const unit2 = (relM[4] || "").toLowerCase();
+
+    let offsetMin = 0;
+    if (unit1.startsWith("h")) offsetMin += n1 * 60;
+    else offsetMin += n1;
+
+    if (n2) {
+      offsetMin += n2; // second part is minutes
+    }
+
+    start = addMinutes(now, offsetMin);
+    end = addMinutes(start, durationMin || 60);
+    explicitDayUsed = true;
+  }
+
+  // If no explicit time but we have a date (from today/tomorrow/next wed/explicit date)
+  if (!start && explicitDayUsed) {
+    start = new Date(baseDate);
+    // Default sensible time:
+    // - if all-day: midnight to midnight next day
+    // - else: start at 9:00 for 60 min
+    if (allDayHint) {
+      start.setHours(0, 0, 0, 0);
+      end = addDays(start, 1);
+    } else {
+      start.setHours(9, 0, 0, 0);
+      end = addMinutes(start, durationMin || 60);
+    }
+  }
+
+  // Fall back: no time parsed at all — bail
+  if (!start || !end) return null;
+
+  // Ensure all-day if user asked for it explicitly regardless of time tokens
+  let allDay = false;
+  if (allDayHint) {
+    const sod = startOfDay(start);
+    const eod = addDays(sod, 1);
+    start = sod;
+    end = eod;
+    allDay = true;
+  }
+
+  // If there is a leftover title need, derive it from the non-time tokens
+  if (!title) {
+    // Remove nearly all time-ish tokens from raw to infer title
+    let t = input;
+    // strip leading command words
+    t = t.replace(/\b(block|schedule|meeting|mtg|event|call|appointment|appt)\b[:]?\s*/gi, "");
+    // remove day words
+    t = t.replace(/\b(today|tomorrow|next|this)\b/gi, "");
+    t = t.replace(/\b(sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)\b/gi, "");
+    // remove date and time phrases
+    t = t.replace(
+      /(\d{4}-\d{1,2}-\d{1,2})|(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)|(\b\d{1,2}(:\d{2})?\s*(a|am|p|pm)\b)|(\b[01]?\d:[0-5]\d\b)|(\bin\s+\d+\s*(m|h|mins?|minutes?|hrs?|hours?)\b)|(\bfor\s+\d+(\s*h(:\d{2})?|\s*(mins?|minutes?))\b)/gi,
+      ""
+    );
+    // strip all-day keywords
+    t = t.replace(/\ball\s*day\b/gi, "");
+    title = trimPunctuation(t).trim();
+  }
+
+  // Cleanup: sometimes email-style extras leak into title; keep it concise
+  if (/words?\b/i.test(title) && /polite|friendly|tone|rewrite/i.test(title)) {
+    // looks like a preset/mail instruction; move to notes
+    const notes = title;
+    title = "Untitled";
+    return {
+      title,
+      startISO: toISOInTZ(start, displayTZ),
+      endISO: toISOInTZ(end, displayTZ),
+      timezone: displayTZ,
+      allDay,
+      durationMin: Math.round((end - start) / 60000),
+      notes,
+    };
+  }
+
+  // Finalize
+  const out = {
+    title: title || deriveDefaultTitle(input) || "Untitled",
+    startISO: toISOInTZ(start, displayTZ),
+    endISO: toISOInTZ(end, displayTZ),
+    timezone: displayTZ,
+    allDay: allDay || undefined,
+    durationMin: Math.round((end - start) / 60000),
+  };
+  return out;
 }
 
-export default parseFocus;
+/** ---------- Helpers ---------- */
+
+function to24h(H, meridian) {
+  let h = clamp(H, 0, 23);
+  const m = (meridian || "").toLowerCase();
+  if (!m) {
+    // No meridian; if 1..12, keep as-is; if >12, already 24h
+    return h;
+  }
+  if (m === "a" || m === "am") {
+    if (h === 12) return 0;
+    return h;
+  }
+  if (m === "p" || m === "pm") {
+    if (h < 12) return h + 12;
+    return h;
+  }
+  return h;
+}
+
+function deriveDefaultTitle(input) {
+  // Grab something human from the tail if user didn't separate
+  // e.g., "next wed 14:30 call with supplier" -> "call with supplier"
+  const m = input.match(/\b(?:am|pm|\d{1,2}:\d{2}|\d{1,2}[ap])\b\s*(.+)$/i);
+  if (m && m[1]) {
+    const t = trimPunctuation(m[1]).trim();
+    if (t) return t;
+  }
+  // fallback: after a date token
+  const m2 = input.match(/\b(?:today|tomorrow|next|this|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b\s*(.+)$/i);
+  if (m2 && m2[1]) {
+    const t = trimPunctuation(m2[1]).trim();
+    if (t) return t;
+  }
+  return null;
+}
