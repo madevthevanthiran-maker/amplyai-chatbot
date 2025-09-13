@@ -4,19 +4,18 @@ import PresetBar from "./PresetBar";
 import presets from "./presets";
 
 /**
- * ChatPanel
- * - Same logic (calendar routing + GPT fallback)
- * - NEW: `showPresets` prop (default: false) to avoid double preset bars.
- *   If your page already renders a PresetBar above the chat, pass showPresets={false}.
- *   If you want ChatPanel to render its own PresetBar, pass showPresets={true}.
+ * ChatPanel (fixed wiring)
+ * - Preset buttons now feed directly into handleSend
+ * - Uses your existing /api/chat endpoint (no changes)
+ * - Enter-to-send handled by ChatInput (above)
  */
 
 const DISPLAY_TZ =
-  process.env.NEXT_PUBLIC_USER_TZ && typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_USER_TZ
-    : "Asia/Singapore";
+  typeof window !== "undefined"
+    ? (Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC")
+    : "UTC";
 
-function fmtDateTime(iso, locale = "en-SG", timeZone = DISPLAY_TZ) {
+function fmtDT(iso, locale = "en-US", timeZone = DISPLAY_TZ) {
   try {
     return new Date(iso).toLocaleString(locale, {
       timeZone,
@@ -32,42 +31,42 @@ function fmtDateTime(iso, locale = "en-SG", timeZone = DISPLAY_TZ) {
   }
 }
 
-export default function ChatPanel({ showPresets = false, initialMode = "general" }) {
+export default function ChatPanel() {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hello! How can I assist you today?" },
   ]);
-  const [tokens, setTokens] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [selectedMode, setSelectedMode] = useState(initialMode);
+  const [selectedMode, setSelectedMode] = useState("general");
+  const [tokens, setTokens] = useState(null);
 
-  // Load Google tokens on mount
+  // Load Google auth status (optional, safe if not connected)
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch("/api/google/status");
         const data = await res.json();
-        if (data.connected) setTokens(data.tokens);
-      } catch (e) {
-        console.error("[ChatPanel] failed to load tokens", e);
+        if (data?.connected) setTokens(data.tokens ?? true);
+      } catch {
+        // ignore
       }
     })();
   }, []);
 
-  function addMessage(msg) {
-    setMessages((prev) => [...prev, msg]);
-  }
+  const add = (msg) => setMessages((prev) => [...prev, msg]);
 
-  async function handleSend(text) {
-    addMessage({ role: "user", content: text });
+  const handleSend = async (text) => {
+    add({ role: "user", content: text });
     setLoading(true);
 
     try {
-      const calendarLike =
+      // Route calendar-ish prompts to calendar mode (plus Focus tab)
+      const isCalendarLike =
+        selectedMode === "focus" ||
         /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
           text
-        ) || selectedMode === "focus";
+        );
 
-      if (calendarLike) {
+      if (isCalendarLike) {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -76,88 +75,97 @@ export default function ChatPanel({ showPresets = false, initialMode = "general"
         const data = await res.json();
 
         if (!res.ok) {
-          addMessage({
+          add({
             role: "assistant",
             content: `❌ Calendar error: ${data.message || data.error || "Not connected"}`,
           });
-          setLoading(false);
-          return;
-        }
-
-        if (data?.parsed) {
-          const startStr = fmtDateTime(data.parsed.startISO);
-          const endStr = fmtDateTime(data.parsed.endISO);
-          addMessage({
+        } else if (data?.parsed) {
+          const { title, startISO, endISO } = data.parsed;
+          add({
             role: "assistant",
-            content: `📅 **Created:** ${data.parsed.title}\n🕒 ${startStr} → ${endStr} (${DISPLAY_TZ})`,
+            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})`,
           });
         } else {
-          addMessage({
-            role: "assistant",
-            content: "⚠️ I couldn't parse that into an event.",
-          });
+          add({ role: "assistant", content: "⚠️ I couldn't parse that into an event." });
         }
         setLoading(false);
         return;
       }
 
-      // Default: GPT flow
+      // Default GPT route
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error);
-      addMessage({ role: "assistant", content: data.reply || "(no reply)" });
+      if (!res.ok) throw new Error(data.message || data.error || "Request failed");
+      add({ role: "assistant", content: data.reply || "(no reply)" });
     } catch (err) {
-      addMessage({ role: "assistant", content: `❌ ${err.message}` });
+      add({ role: "assistant", content: `❌ ${err.message}` });
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
-      {/* Optional in-panel preset bar (off by default to prevent duplicates) */}
-      {showPresets && (
-        <div className="mx-auto w-full max-w-3xl px-3">
-          <PresetBar
-            presets={presets[selectedMode] || []}
-            selectedMode={selectedMode}
-            onInsert={(prompt) => prompt && handleSend(prompt)}
-            className="mb-1"
-          />
-        </div>
-      )}
+      {/* Mode chips */}
+      <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
+        {[
+          ["general", "Chat (general)"],
+          ["mailmate", "MailMate (email)"],
+          ["hirehelper", "HireHelper (resume)"],
+          ["planner", "Planner (study/work)"],
+          ["focus", "Focus"],
+        ].map(([value, label]) => {
+          const active = selectedMode === value;
+          return (
+            <button
+              key={value}
+              onClick={() => setSelectedMode(value)}
+              className={`px-3 py-1.5 rounded-full border ${
+                active
+                  ? "bg-indigo-600 text-white border-indigo-500"
+                  : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Conversation */}
+      {/* Single preset bar; clicks call handleSend directly */}
+      <div className="mx-auto w-full max-w-3xl px-3">
+        <PresetBar
+          presets={presets[selectedMode] || []}
+          selectedMode={selectedMode}
+          onInsert={(text) => handleSend(text)}
+        />
+      </div>
+
+      {/* Messages */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
         <div className="space-y-3 pb-28">
           {messages.map((m, i) => (
             <div
               key={i}
-              className={`message-appear whitespace-pre-wrap leading-relaxed rounded-2xl px-4 py-3 ${
+              className={`whitespace-pre-wrap leading-relaxed rounded-2xl px-4 py-3 border ${
                 m.role === "user"
-                  ? "bg-indigo-600/20 text-indigo-100 border border-indigo-400/20 self-end"
-                  : "bg-white/10 text-white border border-white/10 self-start"
+                  ? "bg-indigo-600/20 text-indigo-100 border-indigo-400/20 self-end"
+                  : "bg-white/10 text-white border-white/10 self-start"
               }`}
             >
               {m.content}
             </div>
           ))}
-          {loading && (
-            <div className="text-sm text-white/60">Assistant is typing…</div>
-          )}
+          {loading && <div className="text-sm text-white/60">Assistant is typing…</div>}
         </div>
       </div>
 
-      {/* Input */}
-      <ChatInput
-        onSend={handleSend}
-        disabled={loading}
-        placeholder="Type a message… (e.g. “next wed 14:30 call with supplier”)"
-      />
+      {/* Input bar with reliable Enter-to-send */}
+      <ChatInput onSend={handleSend} disabled={loading} />
     </div>
   );
 }
