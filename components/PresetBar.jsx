@@ -1,12 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
- * Your OG PresetBar, with one safety: default no-op for onInsert
- * so clicks never silently fail if the parent forgets to pass it.
+ * Your OG PresetBar with a **default onInsert no-op** so clicks never fail
+ * if a parent forgets to pass it.
  */
 export default function PresetBar({
   presets = [],
-  onInsert = () => {},   // <— important default
+  onInsert = () => {},     // <-- important default
   selectedMode,
   className = "",
 }) {
@@ -33,21 +33,44 @@ export default function PresetBar({
     setTimeout(computeEdges, 220);
   };
 
-  // drag-to-scroll
+  // Drag-to-scroll
   useEffect(() => {
     const el = stripRef.current;
     if (!el) return;
-    let isDown = false, startX = 0, startLeft = 0;
-    const onDown = (e) => { isDown = true; startX = e.pageX; startLeft = el.scrollLeft; el.classList.add("dragging"); };
-    const onMove = (e) => { if (!isDown) return; el.scrollLeft = startLeft - (e.pageX - startX); computeEdges(); };
-    const onUp = () => { isDown = false; el.classList.remove("dragging"); };
+
+    let isDown = false;
+    let startX = 0;
+    let startLeft = 0;
+
+    const onDown = (e) => {
+      isDown = true;
+      startX = e.pageX;
+      startLeft = el.scrollLeft;
+      el.classList.add("dragging");
+    };
+    const onMove = (e) => {
+      if (!isDown) return;
+      const dx = e.pageX - startX;
+      el.scrollLeft = startLeft - dx;
+      computeEdges();
+    };
+    const onUp = () => {
+      isDown = false;
+      el.classList.remove("dragging");
+    };
+
     el.addEventListener("mousedown", onDown);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-    return () => { el.removeEventListener("mousedown", onDown); window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+
+    return () => {
+      el.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
   }, []);
 
-  // wheel map
+  // Wheel to horizontal
   useEffect(() => {
     const el = stripRef.current;
     if (!el) return;
@@ -62,17 +85,27 @@ export default function PresetBar({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  // Recompute edges
   useLayoutEffect(() => {
     const el = stripRef.current;
     if (!el) return;
+
     const ro = new ResizeObserver(() => requestAnimationFrame(computeEdges));
     ro.observe(el);
+
     const onScroll = () => computeEdges();
     el.addEventListener("scroll", onScroll, { passive: true });
+
     const raf = requestAnimationFrame(computeEdges);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); el.removeEventListener("scroll", onScroll); };
+
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      el.removeEventListener("scroll", onScroll);
+    };
   }, [selectedMode, presets?.length]);
 
+  // Keyboard arrows
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "ArrowLeft") scrollByAmount("left");
@@ -86,6 +119,7 @@ export default function PresetBar({
 
   return (
     <div className={`relative w-full mt-2 ${className}`}>
+      {/* Left */}
       <button
         type="button"
         aria-label="Scroll left"
@@ -101,6 +135,7 @@ export default function PresetBar({
         <ChevronLeft />
       </button>
 
+      {/* Strip */}
       <div className="px-10">
         <div
           ref={stripRef}
@@ -120,10 +155,12 @@ export default function PresetBar({
           ))}
         </div>
 
+        {/* Fades */}
         <span className="pointer-events-none absolute inset-y-0 left-8 w-8 bg-gradient-to-r from-[#0a0a0a] to-transparent" />
         <span className="pointer-events-none absolute inset-y-0 right-8 w-8 bg-gradient-to-l from-[#0a0a0a] to-transparent" />
       </div>
 
+      {/* Right */}
       <button
         type="button"
         aria-label="Scroll right"
