@@ -1,10 +1,7 @@
+// /pages/api/google/status.js
 import { google } from "googleapis";
 import { readGoogleTokens } from "@/lib/googleCookie";
 
-/**
- * Status endpoint (reads the unified cookie)
- * Response: { connected, scopesOk, expiresIn, email }
- */
 export default async function handler(req, res) {
   try {
     const tokens = readGoogleTokens(req);
@@ -22,19 +19,16 @@ export default async function handler(req, res) {
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI
     );
-
     if (tokens.refresh_token) client.setCredentials({ refresh_token: tokens.refresh_token });
     if (tokens.access_token) client.setCredentials({ access_token: tokens.access_token });
 
     let email = null;
     let scopesOk = true;
-
     try {
       const oauth2 = google.oauth2({ version: "v2", auth: client });
       const me = await oauth2.userinfo.get();
       email = me?.data?.email || null;
     } catch {
-      // If access token invalid, we'll still treat as connected if we have refresh_token
       scopesOk = !!tokens.refresh_token;
     }
 
@@ -42,12 +36,7 @@ export default async function handler(req, res) {
       ? Math.max(0, Math.floor((tokens.expiry_date - Date.now()) / 1000))
       : null;
 
-    return res.status(200).json({
-      connected: true,
-      scopesOk,
-      expiresIn,
-      email,
-    });
+    return res.status(200).json({ connected: true, scopesOk, expiresIn, email });
   } catch {
     return res.status(200).json({
       connected: false,
