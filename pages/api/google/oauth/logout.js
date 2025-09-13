@@ -1,12 +1,8 @@
-// /pages/api/google/oauth/logout.js
-export default function handler(_req, res) {
-  // Clear cookie
-  res.setHeader(
-    "Set-Cookie",
-    `gcal_tok=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax; ${
-      process.env.NODE_ENV !== "development" ? "Secure;" : ""
-    }`
-  );
-  res.writeHead(302, { Location: "/settings" });
-  res.end();
+import { clearGoogleTokens } from "@/lib/googleCookie";
+
+export default async function handler(req, res) {
+  clearGoogleTokens(res);
+  const to = typeof req.query.returnTo === "string" ? req.query.returnTo : "/settings";
+  const sep = to.includes("?") ? "&" : "?";
+  return res.redirect(`${to}${sep}loggedOut=1`);
 }
