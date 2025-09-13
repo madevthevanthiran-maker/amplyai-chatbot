@@ -1,8 +1,8 @@
+// /pages/api/google/oauth/start.js
 import { google } from "googleapis";
 
 export default async function handler(req, res) {
-  const returnTo =
-    typeof req.query.returnTo === "string" ? req.query.returnTo : "/chat";
+  const returnTo = typeof req.query.returnTo === "string" ? req.query.returnTo : "/settings";
 
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -18,9 +18,9 @@ export default async function handler(req, res) {
 
   const url = client.generateAuthUrl({
     access_type: "offline",
-    scope: scopes,
-    prompt: "consent", // ensure refresh_token on re-consent
+    prompt: "consent", // ensures refresh_token on (re)consent
     include_granted_scopes: true,
+    scope: scopes,
     state: encodeURIComponent(returnTo),
   });
 
