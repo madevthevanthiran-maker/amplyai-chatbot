@@ -1,22 +1,28 @@
-// /pages/api/google/oauth/start.js
-import { getAuthUrl } from "../../../../lib/googleClient";
+import { google } from "googleapis";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.setHeader("Allow", "GET");
-    return res.status(405).json({ error: "Method Not Allowed" });
-  }
+  const returnTo =
+    typeof req.query.returnTo === "string" ? req.query.returnTo : "/chat";
 
-  try {
-    // Optional ?state=/where/to/return
-    const state = typeof req.query.state === "string" ? req.query.state : "/settings";
-    const url = getAuthUrl(state);
-    // 302 to Google
-    res.writeHead(302, { Location: url });
-    res.end();
-  } catch (err) {
-    res
-      .status(500)
-      .send(`OAuth start failed: ${err?.message || String(err)}`);
-  }
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+
+  const scopes = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "openid",
+  ];
+
+  const url = client.generateAuthUrl({
+    access_type: "offline",
+    scope: scopes,
+    prompt: "consent", // ensure refresh_token on re-consent
+    include_granted_scopes: true,
+    state: encodeURIComponent(returnTo),
+  });
+
+  res.redirect(url);
 }
