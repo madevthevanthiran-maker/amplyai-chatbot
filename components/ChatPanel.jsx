@@ -1,22 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import ChatInput from "./ChatInput";
 import PresetBar from "./PresetBar";
+import ConnectGoogleBanner from "./ConnectGoogleBanner";
 import presets from "./presets";
 
 /**
  * ChatPanel
  * ---------
- * - Each section (general / mailmate / hirehelper / planner / focus) has its OWN chat thread
- *   and its OWN draft input. All persisted in localStorage.
- * - Presets **prefill** the input (don’t auto-send).
- * - Adjustable chatbox via ChatInput (resize + autosize).
- * - Calendar prompts still route through the calendar path (esp. Focus tab).
- * - Defensive duplicate killer for stray global preset/tab rows (layout-safe).
+ * - Separate threads & drafts per mode (persisted in localStorage)
+ * - Presets prefill the input (editable)
+ * - Adjustable textarea (resize + autosize)
+ * - Inline "Connect Google" banner when not connected
+ * - Calendar prompts go through calendar path (esp. Focus tab)
+ * - Defensive duplicate-killer for stray global tabs/presets
  */
 
 const STORAGE_THREADS = "pp.threads.v1";
-const STORAGE_DRAFTS  = "pp.drafts.v1";
-const STORAGE_MODE    = "pp.selectedMode.v1";
+const STORAGE_DRAFTS = "pp.drafts.v1";
+const STORAGE_MODE = "pp.selectedMode.v1";
 
 const MODES = [
   ["general", "Chat (general)"],
@@ -28,7 +29,7 @@ const MODES = [
 
 const DISPLAY_TZ =
   typeof window !== "undefined"
-    ? (Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC")
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC"
     : "UTC";
 
 function fmtDT(iso, locale = "en-US", timeZone = DISPLAY_TZ) {
@@ -49,42 +50,37 @@ function fmtDT(iso, locale = "en-US", timeZone = DISPLAY_TZ) {
 
 const defaultGreeting = [{ role: "assistant", content: "Hello! How can I assist you today?" }];
 
-const emptyThreads = () =>
-  Object.fromEntries(MODES.map(([k]) => [k, defaultGreeting.slice()]));
-const emptyDrafts  = () =>
-  Object.fromEntries(MODES.map(([k]) => [k, ""]));
+const emptyThreads = () => Object.fromEntries(MODES.map(([k]) => [k, defaultGreeting.slice()]));
+const emptyDrafts = () => Object.fromEntries(MODES.map(([k]) => [k, ""]));
 
 export default function ChatPanel() {
   const rootRef = useRef(null);
 
-  // --- Load persisted state ---
+  // selected mode
   const [selectedMode, setSelectedMode] = useState(() => {
     if (typeof window === "undefined") return "general";
     return localStorage.getItem(STORAGE_MODE) || "general";
   });
 
+  // per-mode threads & drafts
   const [threads, setThreads] = useState(() => {
     if (typeof window === "undefined") return emptyThreads();
     try {
       const raw = localStorage.getItem(STORAGE_THREADS);
       const parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed) return emptyThreads();
-      // ensure all modes exist
       const base = emptyThreads();
-      return { ...base, ...parsed };
+      return parsed ? { ...base, ...parsed } : base;
     } catch {
       return emptyThreads();
     }
   });
-
   const [drafts, setDrafts] = useState(() => {
     if (typeof window === "undefined") return emptyDrafts();
     try {
       const raw = localStorage.getItem(STORAGE_DRAFTS);
       const parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed) return emptyDrafts();
       const base = emptyDrafts();
-      return { ...base, ...parsed };
+      return parsed ? { ...base, ...parsed } : base;
     } catch {
       return emptyDrafts();
     }
@@ -92,42 +88,58 @@ export default function ChatPanel() {
 
   // persist
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads)); } catch {}
+    try {
+      localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads));
+    } catch {}
   }, [threads]);
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts)); } catch {}
+    try {
+      localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts));
+    } catch {}
   }, [drafts]);
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_MODE, selectedMode); } catch {}
+    try {
+      localStorage.setItem(STORAGE_MODE, selectedMode);
+    } catch {}
   }, [selectedMode]);
 
   const currentMessages = threads[selectedMode] || defaultGreeting;
   const currentDraft = drafts[selectedMode] || "";
 
-  // --- Google auth status (non-fatal) ---
+  // Google auth status
+  const [connected, setConnected] = useState(false);
   const [tokens, setTokens] = useState(null);
+
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch("/api/google/status");
         const data = await res.json();
-        if (data?.connected) setTokens(data.tokens ?? true);
-      } catch {}
+        if (data?.connected) {
+          setConnected(true);
+          setTokens(data.tokens ?? true);
+        } else {
+          setConnected(false);
+          setTokens(null);
+        }
+      } catch {
+        // no-op; banner will show “connect”
+        setConnected(false);
+      }
     })();
   }, []);
 
-  // --- Duplicate killer (hide stray global tabs/presets if any) ---
+  // Duplicate-killer: hide stray global tabs/presets if any appear
   useEffect(() => {
     const root = rootRef.current;
     if (!root || typeof document === "undefined") return;
 
     const hideExternalUIs = () => {
-      // Hide preset strips outside our root
+      // preset bars
       document.querySelectorAll(".preset-strip").forEach((el) => {
         if (!root.contains(el)) (el.closest("div") || el).style.display = "none";
       });
-
-      // Hide top tab rows outside our root
+      // tab rows
       const labels = MODES.map(([, label]) => label);
       const btns = Array.from(document.querySelectorAll("button"));
       const candidateRows = new Map();
@@ -151,23 +163,20 @@ export default function ChatPanel() {
     return () => mo.disconnect();
   }, []);
 
-  // --- Helpers ---
-  const setDraft = (mode, text) =>
-    setDrafts((prev) => ({ ...prev, [mode]: text }));
-
+  // helpers
+  const setDraft = (mode, text) => setDrafts((prev) => ({ ...prev, [mode]: text }));
   const pushMessage = (mode, msg) =>
     setThreads((prev) => {
       const arr = prev[mode] || [];
       return { ...prev, [mode]: [...arr, msg] };
     });
 
-  // send pipeline
   const [loading, setLoading] = useState(false);
   const inputRef = useRef(null);
 
   const handleSend = async (text) => {
     pushMessage(selectedMode, { role: "user", content: text });
-    setDraft(selectedMode, ""); // clear input
+    setDraft(selectedMode, "");
     setLoading(true);
 
     try {
@@ -176,6 +185,16 @@ export default function ChatPanel() {
         /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(text);
 
       if (isCalendarLike) {
+        if (!connected) {
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content:
+              "❌ Calendar not connected. Click **Connect Google** below to link your account, then try again.",
+          });
+          setLoading(false);
+          return;
+        }
+
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -195,13 +214,16 @@ export default function ChatPanel() {
             content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})`,
           });
         } else {
-          pushMessage(selectedMode, { role: "assistant", content: "⚠️ I couldn't parse that into an event." });
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: "⚠️ I couldn't parse that into an event.",
+          });
         }
         setLoading(false);
         return;
       }
 
-      // default chat route
+      // normal chat route
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -219,7 +241,6 @@ export default function ChatPanel() {
     }
   };
 
-  // presets prefill current mode's draft
   const handlePresetClick = (text) => {
     const t = text ?? "";
     setDraft(selectedMode, t);
@@ -232,6 +253,14 @@ export default function ChatPanel() {
         el.setSelectionRange?.(len, len);
       } catch {}
     });
+  };
+
+  // Optional: expose a connect handler (used by the banner)
+  const startConnect = () => {
+    const returnTo =
+      typeof window !== "undefined" ? window.location.pathname : "/chat";
+    const url = `/api/google/oauth/start?returnTo=${encodeURIComponent(returnTo)}`;
+    window.location.href = url;
   };
 
   return (
@@ -256,7 +285,7 @@ export default function ChatPanel() {
         })}
       </div>
 
-      {/* Single preset bar (fills input) */}
+      {/* Preset bar */}
       <div className="mx-auto w-full max-w-3xl px-3">
         <PresetBar
           presets={presets[selectedMode] || []}
@@ -267,7 +296,7 @@ export default function ChatPanel() {
 
       {/* Messages */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
-        <div className="space-y-3 pb-28">
+        <div className="space-y-3 pb-24">
           {(currentMessages || defaultGreeting).map((m, i) => (
             <div
               key={i}
@@ -281,10 +310,19 @@ export default function ChatPanel() {
             </div>
           ))}
           {loading && <div className="text-sm text-white/60">Assistant is typing…</div>}
+
+          {/* Inline connect banner — only when NOT connected */}
+          {!connected && (
+            <ConnectGoogleBanner
+              onConnect={startConnect}
+              className="mt-2"
+              message="Connect Google Calendar to create meetings and time blocks directly from the Focus tab or any calendar-like prompt."
+            />
+          )}
         </div>
       </div>
 
-      {/* Adjustable, controlled input for the current mode */}
+      {/* Input */}
       <ChatInput
         value={currentDraft}
         onChange={(v) => setDraft(selectedMode, v)}
