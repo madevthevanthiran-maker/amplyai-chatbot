@@ -3,6 +3,7 @@ import ChatInput from "./ChatInput";
 import PresetBar from "./PresetBar";
 import ConnectGoogleBanner from "./ConnectGoogleBanner";
 import presets from "./presets";
+import parseFocus from "@/utils/parseFocus";
 
 /**
  * ChatPanel
@@ -12,6 +13,7 @@ import presets from "./presets";
  * - Adjustable textarea (resize + autosize)
  * - Inline "Connect Google" banner when not connected
  * - Calendar prompts go through calendar path (esp. Focus tab)
+ * - NEW: Free/Busy conflict check before creating calendar events.
  * - Defensive duplicate-killer for stray global tabs/presets
  */
 
@@ -53,6 +55,19 @@ const defaultGreeting = [{ role: "assistant", content: "Hello! How can I assist 
 const emptyThreads = () => Object.fromEntries(MODES.map(([k]) => [k, defaultGreeting.slice()]));
 const emptyDrafts = () => Object.fromEntries(MODES.map(([k]) => [k, ""]));
 
+// util: simple “next slots” suggestion generator (client-side)
+function suggestNextSlots(startISO, endISO, count = 3, stepMinutes = 30) {
+  const out = [];
+  let start = new Date(startISO);
+  let end = new Date(endISO);
+  for (let i = 0; i < count; i++) {
+    start = new Date(start.getTime() + stepMinutes * 60_000);
+    end = new Date(end.getTime() + stepMinutes * 60_000);
+    out.push([start.toISOString(), end.toISOString()]);
+  }
+  return out;
+}
+
 export default function ChatPanel() {
   const rootRef = useRef(null);
 
@@ -88,19 +103,13 @@ export default function ChatPanel() {
 
   // persist
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads));
-    } catch {}
+    try { localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads)); } catch {}
   }, [threads]);
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts));
-    } catch {}
+    try { localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts)); } catch {}
   }, [drafts]);
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_MODE, selectedMode);
-    } catch {}
+    try { localStorage.setItem(STORAGE_MODE, selectedMode); } catch {}
   }, [selectedMode]);
 
   const currentMessages = threads[selectedMode] || defaultGreeting;
@@ -123,7 +132,6 @@ export default function ChatPanel() {
           setTokens(null);
         }
       } catch {
-        // no-op; banner will show “connect”
         setConnected(false);
       }
     })();
@@ -174,6 +182,7 @@ export default function ChatPanel() {
   const [loading, setLoading] = useState(false);
   const inputRef = useRef(null);
 
+  // ---- FREE/BUSY CHECK + CREATE ----
   const handleSend = async (text) => {
     pushMessage(selectedMode, { role: "user", content: text });
     setDraft(selectedMode, "");
@@ -195,6 +204,67 @@ export default function ChatPanel() {
           return;
         }
 
+        // 1) Parse locally so we can query free/busy first
+        const parsed = parseFocus(text, new Date());
+        if (!parsed || !parsed.startISO || !parsed.endISO) {
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: "⚠️ I couldn't parse that into a date/time. Try a more specific time or add a duration (e.g., “next Wed 2:30pm for 1h”).",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // 2) Check free/busy for the requested window
+        let conflict = false;
+        let busyBlocks = [];
+        try {
+          const fbRes = await fetch("/api/google/calendar/freebusy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              timeMin: parsed.startISO,
+              timeMax: parsed.endISO,
+              timeZone: parsed.timezone || DISPLAY_TZ,
+            }),
+          });
+          const fb = await fbRes.json();
+          if (fbRes.ok && Array.isArray(fb?.busy) && fb.busy.length > 0) {
+            conflict = true;
+            busyBlocks = fb.busy;
+          }
+        } catch (e) {
+          // non-fatal; if the check fails, proceed to create
+          console.warn("[freebusy] failed; will proceed to create", e);
+        }
+
+        if (conflict) {
+          // 3) Offer alternatives (simple rolling suggestions client-side)
+          const suggestions = suggestNextSlots(parsed.startISO, parsed.endISO, 3, 30);
+          const lines = suggestions
+            .map(
+              ([s, e]) => `• ${fmtDT(s)} → ${fmtDT(e)} (${DISPLAY_TZ})`
+            )
+            .join("\n");
+
+          const conflictMsg =
+            `⚠️ You're busy during that time.\n` +
+            (busyBlocks.length
+              ? `Busy block(s) found: ${busyBlocks
+                  .map((b) => `${fmtDT(b.start)}–${fmtDT(b.end)}`)
+                  .join(", ")}.\n`
+              : "") +
+            `Here are a few nearby alternatives:\n${lines}\n\n` +
+            `▶️ Tip: click a suggestion and edit, e.g. “${fmtDT(
+              suggestions[0][0]
+            )} for 1h — ${parsed.title || "meeting"}”.`;
+
+          pushMessage(selectedMode, { role: "assistant", content: conflictMsg });
+          setLoading(false);
+          return;
+        }
+
+        // 4) No conflict — proceed to create (server will parse again; that's OK)
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -208,10 +278,11 @@ export default function ChatPanel() {
             content: `❌ Calendar error: ${data.message || data.error || "Not connected"}`,
           });
         } else if (data?.parsed) {
-          const { title, startISO, endISO } = data.parsed;
+          const { title, startISO, endISO, htmlLink } = data.parsed;
+          const link = htmlLink ? `\n🔗 Open: ${htmlLink}` : "";
           pushMessage(selectedMode, {
             role: "assistant",
-            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})`,
+            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})${link}`,
           });
         } else {
           pushMessage(selectedMode, {
@@ -223,7 +294,7 @@ export default function ChatPanel() {
         return;
       }
 
-      // normal chat route
+      // ----- Normal chat route -----
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -255,10 +326,8 @@ export default function ChatPanel() {
     });
   };
 
-  // Optional: expose a connect handler (used by the banner)
   const startConnect = () => {
-    const returnTo =
-      typeof window !== "undefined" ? window.location.pathname : "/chat";
+    const returnTo = typeof window !== "undefined" ? window.location.pathname : "/chat";
     const url = `/api/google/oauth/start?returnTo=${encodeURIComponent(returnTo)}`;
     window.location.href = url;
   };
