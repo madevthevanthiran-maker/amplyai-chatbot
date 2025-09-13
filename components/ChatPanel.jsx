@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ChatInput from "./ChatInput";
 import PresetBar from "./PresetBar";
 import ConnectGoogleBanner from "./ConnectGoogleBanner";
+import Toast from "./Toast";
 import presets from "./presets";
 import parseFocus from "@/utils/parseFocus";
 
@@ -13,7 +14,8 @@ import parseFocus from "@/utils/parseFocus";
  * - Adjustable textarea (resize + autosize)
  * - Inline "Connect Google" banner when not connected
  * - Calendar prompts go through calendar path (esp. Focus tab)
- * - NEW: Free/Busy conflict check before creating calendar events.
+ * - Free/Busy conflict check before creating events
+ * - Success toast with "Open in Calendar" link
  * - Defensive duplicate-killer for stray global tabs/presets
  */
 
@@ -55,7 +57,6 @@ const defaultGreeting = [{ role: "assistant", content: "Hello! How can I assist 
 const emptyThreads = () => Object.fromEntries(MODES.map(([k]) => [k, defaultGreeting.slice()]));
 const emptyDrafts = () => Object.fromEntries(MODES.map(([k]) => [k, ""]));
 
-// util: simple “next slots” suggestion generator (client-side)
 function suggestNextSlots(startISO, endISO, count = 3, stepMinutes = 30) {
   const out = [];
   let start = new Date(startISO);
@@ -71,13 +72,11 @@ function suggestNextSlots(startISO, endISO, count = 3, stepMinutes = 30) {
 export default function ChatPanel() {
   const rootRef = useRef(null);
 
-  // selected mode
   const [selectedMode, setSelectedMode] = useState(() => {
     if (typeof window === "undefined") return "general";
     return localStorage.getItem(STORAGE_MODE) || "general";
   });
 
-  // per-mode threads & drafts
   const [threads, setThreads] = useState(() => {
     if (typeof window === "undefined") return emptyThreads();
     try {
@@ -89,6 +88,7 @@ export default function ChatPanel() {
       return emptyThreads();
     }
   });
+
   const [drafts, setDrafts] = useState(() => {
     if (typeof window === "undefined") return emptyDrafts();
     try {
@@ -101,7 +101,6 @@ export default function ChatPanel() {
     }
   });
 
-  // persist
   useEffect(() => {
     try { localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads)); } catch {}
   }, [threads]);
@@ -115,7 +114,6 @@ export default function ChatPanel() {
   const currentMessages = threads[selectedMode] || defaultGreeting;
   const currentDraft = drafts[selectedMode] || "";
 
-  // Google auth status
   const [connected, setConnected] = useState(false);
   const [tokens, setTokens] = useState(null);
 
@@ -137,17 +135,14 @@ export default function ChatPanel() {
     })();
   }, []);
 
-  // Duplicate-killer: hide stray global tabs/presets if any appear
   useEffect(() => {
     const root = rootRef.current;
     if (!root || typeof document === "undefined") return;
 
     const hideExternalUIs = () => {
-      // preset bars
       document.querySelectorAll(".preset-strip").forEach((el) => {
         if (!root.contains(el)) (el.closest("div") || el).style.display = "none";
       });
-      // tab rows
       const labels = MODES.map(([, label]) => label);
       const btns = Array.from(document.querySelectorAll("button"));
       const candidateRows = new Map();
@@ -171,7 +166,6 @@ export default function ChatPanel() {
     return () => mo.disconnect();
   }, []);
 
-  // helpers
   const setDraft = (mode, text) => setDrafts((prev) => ({ ...prev, [mode]: text }));
   const pushMessage = (mode, msg) =>
     setThreads((prev) => {
@@ -180,9 +174,9 @@ export default function ChatPanel() {
     });
 
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
   const inputRef = useRef(null);
 
-  // ---- FREE/BUSY CHECK + CREATE ----
   const handleSend = async (text) => {
     pushMessage(selectedMode, { role: "user", content: text });
     setDraft(selectedMode, "");
@@ -204,20 +198,17 @@ export default function ChatPanel() {
           return;
         }
 
-        // 1) Parse locally so we can query free/busy first
         const parsed = parseFocus(text, new Date());
         if (!parsed || !parsed.startISO || !parsed.endISO) {
           pushMessage(selectedMode, {
             role: "assistant",
-            content: "⚠️ I couldn't parse that into a date/time. Try a more specific time or add a duration (e.g., “next Wed 2:30pm for 1h”).",
+            content: "⚠️ Couldn’t parse into a date/time. Try being more specific.",
           });
           setLoading(false);
           return;
         }
 
-        // 2) Check free/busy for the requested window
         let conflict = false;
-        let busyBlocks = [];
         try {
           const fbRes = await fetch("/api/google/calendar/freebusy", {
             method: "POST",
@@ -231,40 +222,22 @@ export default function ChatPanel() {
           const fb = await fbRes.json();
           if (fbRes.ok && Array.isArray(fb?.busy) && fb.busy.length > 0) {
             conflict = true;
-            busyBlocks = fb.busy;
           }
-        } catch (e) {
-          // non-fatal; if the check fails, proceed to create
-          console.warn("[freebusy] failed; will proceed to create", e);
-        }
+        } catch {}
 
         if (conflict) {
-          // 3) Offer alternatives (simple rolling suggestions client-side)
           const suggestions = suggestNextSlots(parsed.startISO, parsed.endISO, 3, 30);
           const lines = suggestions
-            .map(
-              ([s, e]) => `• ${fmtDT(s)} → ${fmtDT(e)} (${DISPLAY_TZ})`
-            )
+            .map(([s, e]) => `• ${fmtDT(s)} → ${fmtDT(e)} (${DISPLAY_TZ})`)
             .join("\n");
-
-          const conflictMsg =
-            `⚠️ You're busy during that time.\n` +
-            (busyBlocks.length
-              ? `Busy block(s) found: ${busyBlocks
-                  .map((b) => `${fmtDT(b.start)}–${fmtDT(b.end)}`)
-                  .join(", ")}.\n`
-              : "") +
-            `Here are a few nearby alternatives:\n${lines}\n\n` +
-            `▶️ Tip: click a suggestion and edit, e.g. “${fmtDT(
-              suggestions[0][0]
-            )} for 1h — ${parsed.title || "meeting"}”.`;
-
-          pushMessage(selectedMode, { role: "assistant", content: conflictMsg });
+          pushMessage(selectedMode, {
+            role: "assistant",
+            content: `⚠️ You're busy during that time.\nHere are some alternatives:\n${lines}`,
+          });
           setLoading(false);
           return;
         }
 
-        // 4) No conflict — proceed to create (server will parse again; that's OK)
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -279,11 +252,16 @@ export default function ChatPanel() {
           });
         } else if (data?.parsed) {
           const { title, startISO, endISO, htmlLink } = data.parsed;
-          const link = htmlLink ? `\n🔗 Open: ${htmlLink}` : "";
           pushMessage(selectedMode, {
             role: "assistant",
-            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})${link}`,
+            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})`,
           });
+          if (htmlLink) {
+            setToast({
+              message: `Event “${title}” created successfully.`,
+              link: { href: htmlLink, label: "Open in Calendar" },
+            });
+          }
         } else {
           pushMessage(selectedMode, {
             role: "assistant",
@@ -294,7 +272,6 @@ export default function ChatPanel() {
         return;
       }
 
-      // ----- Normal chat route -----
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -334,7 +311,6 @@ export default function ChatPanel() {
 
   return (
     <div ref={rootRef} className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
-      {/* Mode tabs */}
       <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
         {MODES.map(([value, label]) => {
           const active = selectedMode === value;
@@ -354,7 +330,6 @@ export default function ChatPanel() {
         })}
       </div>
 
-      {/* Preset bar */}
       <div className="mx-auto w-full max-w-3xl px-3">
         <PresetBar
           presets={presets[selectedMode] || []}
@@ -363,7 +338,6 @@ export default function ChatPanel() {
         />
       </div>
 
-      {/* Messages */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
         <div className="space-y-3 pb-24">
           {(currentMessages || defaultGreeting).map((m, i) => (
@@ -380,7 +354,6 @@ export default function ChatPanel() {
           ))}
           {loading && <div className="text-sm text-white/60">Assistant is typing…</div>}
 
-          {/* Inline connect banner — only when NOT connected */}
           {!connected && (
             <ConnectGoogleBanner
               onConnect={startConnect}
@@ -391,7 +364,6 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* Input */}
       <ChatInput
         value={currentDraft}
         onChange={(v) => setDraft(selectedMode, v)}
@@ -402,6 +374,14 @@ export default function ChatPanel() {
         maxRows={8}
         autosize
       />
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          link={toast.link}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
