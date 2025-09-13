@@ -1,58 +1,60 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
- * ChatInput (classic style)
- * - Controlled input (prevents error text leaking into field)
- * - No logic changes; purely visual polish
+ * ChatInput (fixed)
+ * - Enter to send; Shift+Enter for newline
+ * - Disabled state respected
+ * - Calls onSend(text) with trimmed value
  */
-export default function ChatInput({ onSend, disabled = false, placeholder = "Type a message..." }) {
+export default function ChatInput({
+  onSend,
+  disabled = false,
+  placeholder = 'Type a message... (e.g. “next wed 14:30 call with supplier”)',
+  autoFocus = true,
+}) {
   const [value, setValue] = useState("");
-  const inputRef = useRef(null);
+  const taRef = useRef(null);
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.setAttribute("autocomplete", "off");
-      inputRef.current.setAttribute("autocorrect", "off");
-      inputRef.current.setAttribute("autocapitalize", "off");
-      inputRef.current.setAttribute("spellcheck", "false");
-    }
-  }, []);
+    if (autoFocus && taRef.current) taRef.current.focus();
+  }, [autoFocus]);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  const doSend = () => {
     const text = value.trim();
     if (!text || disabled) return;
-    try {
-      await onSend(text);
-      setValue("");
-    } catch (err) {
-      // keep text so user can edit/resend
-      console.error("[ChatInput] onSend error:", err);
+    onSend?.(text);
+    setValue("");
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      doSend();
     }
-  }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="border-t border-white/10 bg-[#0b0f1a]/90 backdrop-blur sticky bottom-0">
-      <div className="mx-auto max-w-3xl px-3 py-3">
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={inputRef}
-            rows={1}
-            className="flex-1 resize-none rounded-2xl bg-[#0e1526] text-white placeholder-white/50 border border-white/10 px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={placeholder}
-          />
-          <button
-            type="submit"
-            disabled={disabled}
-            className="shrink-0 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 transition disabled:opacity-50"
-            aria-label="Send message"
-          >
-            Send
-          </button>
-        </div>
+    <div className="w-full sticky bottom-0 left-0 right-0 bg-[#0b0f1a] border-t border-white/10 px-4 py-3">
+      <div className="mx-auto max-w-3xl flex gap-3 items-end">
+        <textarea
+          ref={taRef}
+          className="flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none text-white placeholder:text-white/40"
+          rows={1}
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={onKeyDown}
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          onClick={doSend}
+          disabled={disabled}
+          className="px-4 py-2 rounded-xl border border-indigo-500 bg-indigo-600 text-white disabled:opacity-60"
+        >
+          Send
+        </button>
       </div>
-    </form>
+    </div>
   );
 }
