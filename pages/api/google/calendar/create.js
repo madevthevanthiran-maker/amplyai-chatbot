@@ -1,13 +1,8 @@
+// /pages/api/google/calendar/create.js
 import { google } from "googleapis";
 import { readGoogleTokens } from "@/lib/googleCookie";
 import parseFocus from "@/utils/parseFocus";
 
-/**
- * POST:
- *   - message?: string  (we'll parse with parseFocus)
- *   - parsed?: { title, startISO, endISO, timezone, allDay? }
- * -> { ok: true, parsed, created: { id, htmlLink } }
- */
 const FEATURE_CALENDAR =
   process.env.NEXT_PUBLIC_FEATURE_CALENDAR === undefined
     ? true
