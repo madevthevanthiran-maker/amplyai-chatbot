@@ -1,29 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 /**
- * ChatInput (fixed)
- * - Enter to send; Shift+Enter for newline
- * - Disabled state respected
- * - Calls onSend(text) with trimmed value
+ * ChatInput (controlled)
+ * ---------------------
+ * - Controlled by parent via `value` and `onChange`
+ * - Enter to send; Shift+Enter inserts newline
+ * - Parent can pass `inputRef` to focus or set selection (for presets)
  */
 export default function ChatInput({
+  value,
+  onChange,
   onSend,
   disabled = false,
   placeholder = 'Type a message... (e.g. “next wed 14:30 call with supplier”)',
   autoFocus = true,
+  inputRef, // optional: parent-managed ref to the <textarea>
 }) {
-  const [value, setValue] = useState("");
-  const taRef = useRef(null);
+  const innerRef = useRef(null);
+  const taRef = inputRef || innerRef;
 
   useEffect(() => {
     if (autoFocus && taRef.current) taRef.current.focus();
-  }, [autoFocus]);
+  }, [autoFocus, taRef]);
 
   const doSend = () => {
-    const text = value.trim();
+    const text = (value || "").trim();
     if (!text || disabled) return;
     onSend?.(text);
-    setValue("");
   };
 
   const onKeyDown = (e) => {
@@ -42,7 +45,7 @@ export default function ChatInput({
           rows={1}
           value={value}
           placeholder={placeholder}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => onChange?.(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={disabled}
         />
