@@ -1,19 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ChatInput from "./ChatInput";
 import PresetBar from "./PresetBar";
 import presets from "./presets";
 
 /**
- * ChatPanel
- * ----------
+ * ChatPanel (single-stack, duplicate-killer)
+ * -----------------------------------------
  * Owns:
- *  - The mode tabs
+ *  - Mode tabs
  *  - EXACTLY ONE PresetBar (wired to send)
  *  - Messages list
  *  - Input (Enter-to-send)
  *
- * Safety: adds a guard so if some other parent accidentally renders a second
- * PresetBar above or below, this panel still shows only one (no duplicates).
+ * NEW:
+ *  - DOM guard that hides any *external* preset bar / tab row that a layout
+ *    might render above this panel, so you never see duplicates on /chat.
+ *    (Non-destructive: we only set style.display = 'none' on those nodes.)
  */
 
 const DISPLAY_TZ =
@@ -38,6 +40,8 @@ function fmtDT(iso, locale = "en-US", timeZone = DISPLAY_TZ) {
 }
 
 export default function ChatPanel() {
+  const rootRef = useRef(null);
+
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hello! How can I assist you today?" },
   ]);
@@ -45,14 +49,50 @@ export default function ChatPanel() {
   const [selectedMode, setSelectedMode] = useState("general");
   const [tokens, setTokens] = useState(null);
 
-  // Prevent duplicate preset bars: if some other preset bar exists on page,
-  // we track it and avoid rendering ours (defensive; should not happen if page is clean).
-  const [externalPresetDetected, setExternalPresetDetected] = useState(false);
+  // --- Hide any duplicate global bars rendered by layout/header on this route ---
   useEffect(() => {
-    // Look for another .preset-strip outside of our own container
-    const strips = document.querySelectorAll(".preset-strip");
-    // If there is already one before we mount, mark duplicate
-    if (strips.length > 1) setExternalPresetDetected(true);
+    const root = rootRef.current;
+    if (!root || typeof document === "undefined") return;
+
+    // 1) Hide any preset strips not inside our root
+    const strips = Array.from(document.querySelectorAll(".preset-strip"));
+    strips.forEach((el) => {
+      if (!root.contains(el)) {
+        el.dataset.ppHiddenByChat = "1";
+        // hide the whole visual row if possible (button row container)
+        const row = el.closest("div");
+        (row || el).style.display = "none";
+      }
+    });
+
+    // 2) Hide any top mode-tabs row not inside our root.
+    // Heuristic: look for a container that has at least 3 of our labels.
+    const labels = [
+      "Chat (general)",
+      "MailMate (email)",
+      "HireHelper (resume)",
+      "Planner (study/work)",
+      "Focus",
+    ];
+    // query all buttons on the page and group by their parent rows
+    const btns = Array.from(document.querySelectorAll("button"));
+    const candidateRows = new Map(); // rowEl -> count
+    btns.forEach((b) => {
+      const t = (b.textContent || "").trim();
+      if (labels.includes(t)) {
+        const row = b.parentElement?.closest("div");
+        if (row && !root.contains(row)) {
+          candidateRows.set(row, (candidateRows.get(row) || 0) + 1);
+        }
+      }
+    });
+    // hide any row that looks like the external tab row
+    candidateRows.forEach((count, row) => {
+      if (count >= 3) {
+        row.dataset.ppHiddenByChat = "1";
+        row.style.display = "none";
+      }
+    });
   }, []);
 
   // Load Google auth status (non-fatal if it fails)
@@ -75,7 +115,6 @@ export default function ChatPanel() {
     setLoading(true);
 
     try {
-      // Calendar-ish prompts (or Focus tab)
       const isCalendarLike =
         selectedMode === "focus" ||
         /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
@@ -128,8 +167,8 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
-      {/* Mode tabs */}
+    <div ref={rootRef} className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
+      {/* Mode tabs (ours) */}
       <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
         {[
           ["general", "Chat (general)"],
@@ -155,16 +194,14 @@ export default function ChatPanel() {
         })}
       </div>
 
-      {/* OUR single preset bar (skipped if an external duplicate is detected) */}
-      {!externalPresetDetected && (
-        <div className="mx-auto w-full max-w-3xl px-3">
-          <PresetBar
-            presets={presets[selectedMode] || []}
-            selectedMode={selectedMode}
-            onInsert={(text) => handleSend(text)}
-          />
-        </div>
-      )}
+      {/* Single preset bar (ours) */}
+      <div className="mx-auto w-full max-w-3xl px-3">
+        <PresetBar
+          presets={presets[selectedMode] || []}
+          selectedMode={selectedMode}
+          onInsert={(text) => handleSend(text)}
+        />
+      </div>
 
       {/* Messages */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
