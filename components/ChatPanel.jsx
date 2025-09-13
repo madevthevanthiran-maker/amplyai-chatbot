@@ -4,20 +4,27 @@ import PresetBar from "./PresetBar";
 import presets from "./presets";
 
 /**
- * ChatPanel (single-stack with editable presets + duplicate killer 2.0)
- * -------------------------------------------------------------------
- * Owns:
- *  - Mode tabs
- *  - EXACTLY ONE PresetBar (wired to prefill input)
- *  - Messages list
- *  - Input (Enter-to-send, Shift+Enter newline)
- *
- * NEW:
- *  - Robust duplicate remover using MutationObserver.
- *    If any external layout renders an extra tab row or preset bar
- *    *before or after* this component mounts, we hide it safely by
- *    applying `style.display = 'none'` to the out-of-root nodes.
+ * ChatPanel
+ * ---------
+ * - Each section (general / mailmate / hirehelper / planner / focus) has its OWN chat thread
+ *   and its OWN draft input. All persisted in localStorage.
+ * - Presets **prefill** the input (don’t auto-send).
+ * - Adjustable chatbox via ChatInput (resize + autosize).
+ * - Calendar prompts still route through the calendar path (esp. Focus tab).
+ * - Defensive duplicate killer for stray global preset/tab rows (layout-safe).
  */
+
+const STORAGE_THREADS = "pp.threads.v1";
+const STORAGE_DRAFTS  = "pp.drafts.v1";
+const STORAGE_MODE    = "pp.selectedMode.v1";
+
+const MODES = [
+  ["general", "Chat (general)"],
+  ["mailmate", "MailMate (email)"],
+  ["hirehelper", "HireHelper (resume)"],
+  ["planner", "Planner (study/work)"],
+  ["focus", "Focus"],
+];
 
 const DISPLAY_TZ =
   typeof window !== "undefined"
@@ -40,46 +47,90 @@ function fmtDT(iso, locale = "en-US", timeZone = DISPLAY_TZ) {
   }
 }
 
+const defaultGreeting = [{ role: "assistant", content: "Hello! How can I assist you today?" }];
+
+const emptyThreads = () =>
+  Object.fromEntries(MODES.map(([k]) => [k, defaultGreeting.slice()]));
+const emptyDrafts  = () =>
+  Object.fromEntries(MODES.map(([k]) => [k, ""]));
+
 export default function ChatPanel() {
   const rootRef = useRef(null);
 
-  const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hello! How can I assist you today?" },
-  ]);
-  const [loading, setLoading] = useState(false);
-  const [selectedMode, setSelectedMode] = useState("general");
+  // --- Load persisted state ---
+  const [selectedMode, setSelectedMode] = useState(() => {
+    if (typeof window === "undefined") return "general";
+    return localStorage.getItem(STORAGE_MODE) || "general";
+  });
+
+  const [threads, setThreads] = useState(() => {
+    if (typeof window === "undefined") return emptyThreads();
+    try {
+      const raw = localStorage.getItem(STORAGE_THREADS);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed) return emptyThreads();
+      // ensure all modes exist
+      const base = emptyThreads();
+      return { ...base, ...parsed };
+    } catch {
+      return emptyThreads();
+    }
+  });
+
+  const [drafts, setDrafts] = useState(() => {
+    if (typeof window === "undefined") return emptyDrafts();
+    try {
+      const raw = localStorage.getItem(STORAGE_DRAFTS);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed) return emptyDrafts();
+      const base = emptyDrafts();
+      return { ...base, ...parsed };
+    } catch {
+      return emptyDrafts();
+    }
+  });
+
+  // persist
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_THREADS, JSON.stringify(threads)); } catch {}
+  }, [threads]);
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(drafts)); } catch {}
+  }, [drafts]);
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_MODE, selectedMode); } catch {}
+  }, [selectedMode]);
+
+  const currentMessages = threads[selectedMode] || defaultGreeting;
+  const currentDraft = drafts[selectedMode] || "";
+
+  // --- Google auth status (non-fatal) ---
   const [tokens, setTokens] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/google/status");
+        const data = await res.json();
+        if (data?.connected) setTokens(data.tokens ?? true);
+      } catch {}
+    })();
+  }, []);
 
-  // Controlled draft + ref so presets can prefill + focus cursor at end
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef(null);
-
-  // --- Duplicate killer (MutationObserver) ---
+  // --- Duplicate killer (hide stray global tabs/presets if any) ---
   useEffect(() => {
     const root = rootRef.current;
     if (!root || typeof document === "undefined") return;
 
     const hideExternalUIs = () => {
-      // Hide any preset strips NOT contained inside our root
-      const strips = Array.from(document.querySelectorAll(".preset-strip"));
-      strips.forEach((el) => {
-        if (!root.contains(el)) {
-          const row = el.closest("div");
-          (row || el).style.display = "none";
-          (row || el).dataset.ppHiddenByChat = "1";
-        }
+      // Hide preset strips outside our root
+      document.querySelectorAll(".preset-strip").forEach((el) => {
+        if (!root.contains(el)) (el.closest("div") || el).style.display = "none";
       });
 
-      // Hide any top mode-tab rows NOT inside our root.
-      const labels = [
-        "Chat (general)",
-        "MailMate (email)",
-        "HireHelper (resume)",
-        "Planner (study/work)",
-        "Focus",
-      ];
+      // Hide top tab rows outside our root
+      const labels = MODES.map(([, label]) => label);
       const btns = Array.from(document.querySelectorAll("button"));
-      const candidateRows = new Map(); // rowEl -> count
+      const candidateRows = new Map();
       btns.forEach((b) => {
         const t = (b.textContent || "").trim();
         if (labels.includes(t)) {
@@ -90,49 +141,39 @@ export default function ChatPanel() {
         }
       });
       candidateRows.forEach((count, row) => {
-        if (count >= 3) {
-          row.style.display = "none";
-          row.dataset.ppHiddenByChat = "1";
-        }
+        if (count >= 3) row.style.display = "none";
       });
     };
 
-    // Run immediately
     hideExternalUIs();
-
-    // Observe future DOM changes (e.g., layout renders after us)
-    const mo = new MutationObserver(() => hideExternalUIs());
+    const mo = new MutationObserver(hideExternalUIs);
     mo.observe(document.body, { childList: true, subtree: true });
-
     return () => mo.disconnect();
   }, []);
 
-  // Load Google auth status (non-fatal if it fails)
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/google/status");
-        const data = await res.json();
-        if (data?.connected) setTokens(data.tokens ?? true);
-      } catch {
-        /* ignore */
-      }
-    })();
-  }, []);
+  // --- Helpers ---
+  const setDraft = (mode, text) =>
+    setDrafts((prev) => ({ ...prev, [mode]: text }));
 
-  const add = (msg) => setMessages((prev) => [...prev, msg]);
+  const pushMessage = (mode, msg) =>
+    setThreads((prev) => {
+      const arr = prev[mode] || [];
+      return { ...prev, [mode]: [...arr, msg] };
+    });
+
+  // send pipeline
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef(null);
 
   const handleSend = async (text) => {
-    add({ role: "user", content: text });
-    setDraft(""); // clear input after capture
+    pushMessage(selectedMode, { role: "user", content: text });
+    setDraft(selectedMode, ""); // clear input
     setLoading(true);
 
     try {
       const isCalendarLike =
         selectedMode === "focus" ||
-        /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(
-          text
-        );
+        /\b(block|calendar|schedule|meeting|mtg|event|call|appointment|appt)\b/i.test(text);
 
       if (isCalendarLike) {
         const res = await fetch("/api/chat", {
@@ -143,26 +184,24 @@ export default function ChatPanel() {
         const data = await res.json();
 
         if (!res.ok) {
-          add({
+          pushMessage(selectedMode, {
             role: "assistant",
             content: `❌ Calendar error: ${data.message || data.error || "Not connected"}`,
           });
         } else if (data?.parsed) {
           const { title, startISO, endISO } = data.parsed;
-          add({
+          pushMessage(selectedMode, {
             role: "assistant",
-            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(
-              endISO
-            )} (${DISPLAY_TZ})`,
+            content: `📅 **Created:** ${title}\n🕒 ${fmtDT(startISO)} → ${fmtDT(endISO)} (${DISPLAY_TZ})`,
           });
         } else {
-          add({ role: "assistant", content: "⚠️ I couldn't parse that into an event." });
+          pushMessage(selectedMode, { role: "assistant", content: "⚠️ I couldn't parse that into an event." });
         }
         setLoading(false);
         return;
       }
 
-      // Default GPT route
+      // default chat route
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,20 +209,20 @@ export default function ChatPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || data.error || "Request failed");
-      add({ role: "assistant", content: data.reply || "(no reply)" });
+      pushMessage(selectedMode, { role: "assistant", content: data.reply || "(no reply)" });
     } catch (err) {
       console.error("[/api/chat] error", { text, err });
-      add({ role: "assistant", content: `❌ ${err.message}` });
+      pushMessage(selectedMode, { role: "assistant", content: `❌ ${err.message}` });
     } finally {
       setLoading(false);
-      if (inputRef.current) inputRef.current.focus();
+      inputRef.current?.focus();
     }
   };
 
-  // Prefill input from preset, focus, caret at end
+  // presets prefill current mode's draft
   const handlePresetClick = (text) => {
     const t = text ?? "";
-    setDraft(t);
+    setDraft(selectedMode, t);
     requestAnimationFrame(() => {
       const el = inputRef.current;
       if (!el) return;
@@ -199,13 +238,7 @@ export default function ChatPanel() {
     <div ref={rootRef} className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
       {/* Mode tabs */}
       <div className="mx-auto max-w-3xl px-3 py-2 flex flex-wrap gap-2 text-sm">
-        {[
-          ["general", "Chat (general)"],
-          ["mailmate", "MailMate (email)"],
-          ["hirehelper", "HireHelper (resume)"],
-          ["planner", "Planner (study/work)"],
-          ["focus", "Focus"],
-        ].map(([value, label]) => {
+        {MODES.map(([value, label]) => {
           const active = selectedMode === value;
           return (
             <button
@@ -223,7 +256,7 @@ export default function ChatPanel() {
         })}
       </div>
 
-      {/* Single preset bar — fills input (does not auto-send) */}
+      {/* Single preset bar (fills input) */}
       <div className="mx-auto w-full max-w-3xl px-3">
         <PresetBar
           presets={presets[selectedMode] || []}
@@ -235,7 +268,7 @@ export default function ChatPanel() {
       {/* Messages */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
         <div className="space-y-3 pb-28">
-          {messages.map((m, i) => (
+          {(currentMessages || defaultGreeting).map((m, i) => (
             <div
               key={i}
               className={`whitespace-pre-wrap leading-relaxed rounded-2xl px-4 py-3 border ${
@@ -251,13 +284,16 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* Controlled input: Enter-to-send, Shift+Enter newline */}
+      {/* Adjustable, controlled input for the current mode */}
       <ChatInput
-        value={draft}
-        onChange={setDraft}
+        value={currentDraft}
+        onChange={(v) => setDraft(selectedMode, v)}
         onSend={handleSend}
         disabled={loading}
         inputRef={inputRef}
+        minRows={1}
+        maxRows={8}
+        autosize
       />
     </div>
   );
