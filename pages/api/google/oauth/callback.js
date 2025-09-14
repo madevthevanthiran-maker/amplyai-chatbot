@@ -1,31 +1,35 @@
-// /pages/api/google/oauth/callback.js
-import { google } from "googleapis";
-import { writeGoogleTokens } from "@/lib/googleCookie";
+import { exchangeCodeForTokens } from "../../../../lib/googleClient";
+import { writeTokensCookie } from "../../../../lib/googleCookie";
 
 export default async function handler(req, res) {
   try {
-    const code = req.query.code;
-    const returnTo = req.query.state ? decodeURIComponent(req.query.state) : "/settings";
-
+    const { code, state } = req.query;
     if (!code) {
-      const sep = returnTo.includes("?") ? "&" : "?";
-      return res.redirect(`${returnTo}${sep}gcb=cancelled`);
+      res.status(400).send("Missing code");
+      return;
     }
 
-    const client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
+    const tokens = await exchangeCodeForTokens(code);
 
-    const { tokens } = await client.getToken(code);
-    writeGoogleTokens(res, tokens);
+    // Persist tokens
+    writeTokensCookie(res, req, tokens);
 
+    let returnTo = "/settings";
+    try {
+      if (state) {
+        const parsed = JSON.parse(
+          Buffer.from(state, "base64url").toString("utf8")
+        );
+        if (parsed?.returnTo) returnTo = parsed.returnTo;
+      }
+    } catch {}
+
+    // Add a harmless flag so UI can clean it and know a round-trip occurred.
     const sep = returnTo.includes("?") ? "&" : "?";
-    return res.redirect(`${returnTo}${sep}gcb=${Date.now()}`);
-  } catch (e) {
-    const fallback = "/settings";
-    const sep = fallback.includes("?") ? "&" : "?";
-    return res.redirect(`${fallback}${sep}gerr=1`);
+    res.redirect(`${returnTo}${sep}gcb=1`);
+  } catch (err) {
+    res
+      .status(500)
+      .json({ ok: false, message: "OAuth callback failed", error: String(err) });
   }
 }
