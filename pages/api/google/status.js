@@ -1,29 +1,26 @@
-import { hydrateClientFromCookie, safeDiag } from "../../../lib/googleClient";
+import { hydrateFromCookie, diag } from "../../../lib/googleClient";
 
 export default async function handler(req, res) {
   try {
-    const { oauth2, tokens, ready } = await hydrateClientFromCookie(req, res);
-
+    const { ready, auth, tokens } = await hydrateFromCookie(req, res);
     if (!ready) {
       res.status(200).json({
         connected: false,
         email: null,
         expiresIn: null,
-        scopesOk: false,
-        diag: safeDiag(req),
+        diag: diag(req),
       });
       return;
     }
 
-    // Try to read profile email via tokeninfo (optional but nice)
     let email = null;
     try {
-      const tokenInfo = await oauth2.getTokenInfo(tokens.access_token);
-      email = tokenInfo.email || null;
+      const info = await auth.getTokenInfo(tokens.access_token);
+      email = info.email || null;
     } catch {}
 
     const expiresIn =
-      typeof tokens.expiry_date === "number"
+      typeof tokens?.expiry_date === "number"
         ? Math.max(0, Math.floor((tokens.expiry_date - Date.now()) / 1000))
         : null;
 
@@ -31,17 +28,15 @@ export default async function handler(req, res) {
       connected: true,
       email,
       expiresIn,
-      scopesOk: true,
-      diag: safeDiag(req),
+      diag: diag(req),
     });
   } catch (e) {
     res.status(200).json({
       connected: false,
       email: null,
       expiresIn: null,
-      scopesOk: false,
       error: String(e),
-      diag: safeDiag(req),
+      diag: diag(req),
     });
   }
 }
