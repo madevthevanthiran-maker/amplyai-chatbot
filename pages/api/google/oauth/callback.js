@@ -1,5 +1,5 @@
-import { exchangeCodeForTokens } from "../../../../lib/googleClient";
-import { writeTokensCookie } from "../../../../lib/googleCookie";
+import { exchangeCode } from "../../../../lib/googleClient";
+import { setTokensCookie } from "../../../../lib/googleCookie";
 
 export default async function handler(req, res) {
   try {
@@ -9,10 +9,8 @@ export default async function handler(req, res) {
       return;
     }
 
-    const tokens = await exchangeCodeForTokens(code);
-
-    // Persist tokens
-    writeTokensCookie(res, req, tokens);
+    const tokens = await exchangeCode(code);
+    setTokensCookie(res, req, tokens);
 
     let returnTo = "/settings";
     try {
@@ -24,12 +22,15 @@ export default async function handler(req, res) {
       }
     } catch {}
 
-    // Add a harmless flag so UI can clean it and know a round-trip occurred.
     const sep = returnTo.includes("?") ? "&" : "?";
-    res.redirect(`${returnTo}${sep}gcb=1`);
-  } catch (err) {
-    res
-      .status(500)
-      .json({ ok: false, message: "OAuth callback failed", error: String(err) });
+    res.redirect(302, `${returnTo}${sep}gcb=1`);
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      where: "oauth/callback",
+      error: String(e),
+      hint:
+        "Most common cause: redirect URI mismatch. Ensure GOOGLE_REDIRECT_URI exactly matches the URL configured in Google Cloud Console.",
+    });
   }
 }
