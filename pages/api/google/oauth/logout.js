@@ -1,7 +1,7 @@
 import { clearTokensCookie } from "../../../../lib/googleCookie";
 
-export default async function handler(req, res) {
-  clearTokensCookie(res, req);
+export default function handler(req, res) {
   const { returnTo = "/settings" } = req.query;
-  res.redirect(returnTo);
+  clearTokensCookie(res, req);
+  res.redirect(302, returnTo);
 }
