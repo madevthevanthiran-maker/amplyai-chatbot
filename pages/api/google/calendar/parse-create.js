@@ -1,32 +1,52 @@
-import { createCalendarEvent } from '../../../../lib/calendar';
-import { parseFocus } from '../../../../utils/parseFocus';
+import parseFocus from "../../../../utils/parseFocus";
+import {
+  hydrateClientFromCookie,
+  calendarClient,
+} from "../../../../lib/googleClient";
 
-/**
- * POST /api/google/calendar/parse-create
- * Body: { text: string, tokens: {...}, timezone? }
- * NOTE: If you store tokens in a cookie/session, you can fetch them here instead of reading from body.
- */
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    res.status(405).json({ ok: false, message: "Method not allowed" });
+    return;
+  }
+
+  const { text, timezone } = req.body || {};
+  if (!text) {
+    res.status(400).json({ ok: false, message: "Missing 'text' in body" });
+    return;
+  }
+
+  // Ensure we have tokens
+  const { oauth2, ready } = await hydrateClientFromCookie(req, res);
+  if (!ready) {
+    res.status(401).json({
+      ok: false,
+      message: "Not connected",
+      hint: "Open Settings → Connect Google; then refresh.",
+    });
+    return;
+  }
+
   try {
-    const { text, tokens, timezone } = req.body || {};
-    if (!text) return res.status(400).json({ error: 'Missing text' });
-    if (!tokens) return res.status(401).json({ error: 'Not connected' });
-
     const parsed = parseFocus(text, { timezone });
-    if (parsed.error) return res.status(400).json({ error: 'PARSE_ERROR', detail: parsed });
+    const cal = calendarClient(oauth2);
 
-    const { title, startISO, endISO, allDay, timezone: tz } = parsed;
-    const result = await createCalendarEvent(tokens, {
-      summary: title,
-      description: allDay ? 'All-day block (auto)' : 'Created by AmplyAI',
-      startISO, endISO, timeZone: tz,
+    const created = await cal.events.insert({
+      calendarId: "primary",
+      requestBody: {
+        summary: parsed.title,
+        start: { dateTime: parsed.startISO, timeZone: parsed.timezone },
+        end: { dateTime: parsed.endISO, timeZone: parsed.timezone },
+      },
     });
 
-    if (result.error) return res.status(500).json(result);
-    return res.status(200).json({ ok: true, parsed, event: result.event, refreshed: result.refreshed, tokens: result.tokens });
-  } catch (e) {
-    console.error('[parse-create] fatal', e);
-    return res.status(500).json({ error: 'INTERNAL', message: e.message });
+    res.status(200).json({ ok: true, parsed, created: created.data });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to parse or create",
+      error: String(err?.message || err),
+    });
   }
 }
