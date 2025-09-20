@@ -1,9 +1,7 @@
-import Settings from "@/components/Settings";
+import dynamic from "next/dynamic";
+
+const Settings = dynamic(() => import("../components/Settings"), { ssr: false });
 
 export default function SettingsPage() {
-  return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
-      <Settings />
-    </div>
-  );
+  return <Settings />;
 }
