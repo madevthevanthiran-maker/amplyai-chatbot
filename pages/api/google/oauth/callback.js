@@ -8,7 +8,8 @@ export default async function handler(req, res) {
     const returnTo = typeof state === "string" && state ? state : "/settings";
 
     await exchangeCodeAndStore(req, res, String(code));
-    res.redirect(`${returnTo}?gcb=1`);
+    res.writeHead(302, { Location: `${returnTo}?gcb=1` });
+    res.end();
   } catch (err) {
     res
       .status(400)
