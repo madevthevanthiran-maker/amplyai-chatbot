@@ -1,5 +1,5 @@
-// components/Settings.jsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+// /components/Settings.jsx
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 
 export default function Settings() {
@@ -9,9 +9,9 @@ export default function Settings() {
     connected: false,
     email: null,
     expiresIn: null,
-    scopesOk: null,
+    scopesOk: false,
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -21,107 +21,69 @@ export default function Settings() {
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("10:00");
   const [tz, setTz] = useState(
-    (typeof Intl !== "undefined" &&
-      Intl.DateTimeFormat().resolvedOptions().timeZone) ||
-      "UTC"
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
   );
   const [location, setLocation] = useState("Remote");
 
   const sampleParsed = useMemo(() => {
     const startISO = new Date(`${date}T${start}:00`).toISOString();
     const endISO = new Date(`${date}T${end}:00`).toISOString();
-    return {
-      title,
-      start: startISO,
-      end: endISO,
-      tz,
-      location,
-      allDay: false,
-      intent: "event",
-    };
+    return { title, startISO, endISO, timezone: tz, location };
   }, [title, date, start, end, tz, location]);
 
-  const refreshStatus = useCallback(async () => {
+  const refreshStatus = async () => {
     setLoading(true);
     try {
       const r = await fetch("/api/google/status");
       const j = await r.json();
-      // Accept both shapes:
-      // {ok:true, status:{connected,...}}  OR  {connected, ...}
-      const s = j?.status ?? j ?? {};
-      setStatus({
-        connected: !!s.connected,
-        email: s.email ?? null,
-        expiresIn: s.expiresIn ?? null,
-        scopesOk: s.scopesOk ?? null,
-      });
-    } catch {
-      setStatus((prev) => ({ ...prev, connected: false }));
+      setStatus(j);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     refreshStatus();
-
-    // Listen for popup -> postMessage from /api/google/oauth/callback
-    const onMsg = (e) => {
-      if (e?.data?.source === "amply-google" && e?.data?.ok) {
-        setTimeout(refreshStatus, 300);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("gcb")) {
+        url.searchParams.delete("gcb");
+        window.history.replaceState({}, "", url.toString());
       }
-    };
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, [refreshStatus]);
-
-  async function onConnect() {
-    try {
-      const r = await fetch("/api/google/oauth/start");
-      const j = await r.json();
-      if (!j.ok || !j.url) throw new Error(j.error || "No auth URL");
-      const w = 520,
-        h = 640;
-      const y = window.top.outerHeight / 2 + window.top.screenY - h / 2;
-      const x = window.top.outerWidth / 2 + window.top.screenX - w / 2;
-      window.open(j.url, "amply-gcal", `width=${w},height=${h},left=${x},top=${y}`);
-    } catch (e) {
-      alert("Failed to start Google sign-in: " + e.message);
     }
-  }
+  }, []);
 
-  async function onDisconnect() {
-    try {
-      const r = await fetch("/api/google/oauth/logout", { method: "POST" });
-      if (!r.ok) throw new Error("Logout failed");
-    } catch (e) {
-      // best effort
-      console.warn(e);
-    } finally {
-      refreshStatus();
-    }
-  }
+  // IMPORTANT: navigate (don’t fetch) to start OAuth
+  const startHref = `/api/google/oauth/start?returnTo=${encodeURIComponent(
+    "/settings"
+  )}`;
+
+  const onConnect = () => {
+    // Either use a normal <a href={startHref}> or do this:
+    window.location.assign(startHref);
+  };
+
+  const onDisconnect = () => {
+    window.location.assign("/api/google/oauth/logout?returnTo=/settings");
+  };
 
   const onBackToChat = () => router.push("/chat");
 
-  async function createSample() {
+  const createSample = async () => {
     try {
       setCreating(true);
       setResult(null);
-      // Back end now accepts either {text} or {parsed}
       const r = await fetch("/api/google/calendar/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ parsed: sampleParsed }),
       });
       const j = await r.json();
-      setResult(j.ok ? { ok: true, created: j.event } : { ok: false, message: j.error, hint: j.hint });
-    } catch (e) {
-      setResult({ ok: false, message: e.message });
+      setResult(j);
     } finally {
       setCreating(false);
     }
-  }
+  };
 
   return (
     <div className="max-w-3xl mx-auto p-6">
@@ -139,6 +101,8 @@ export default function Settings() {
               Disconnect
             </button>
           ) : (
+            // You can make this an <a> to be 100% sure no fetch happens:
+            // <a className="..." href={startHref}>Connect Google</a>
             <button
               className="px-3 py-1.5 rounded-md border border-indigo-400/50 bg-indigo-500/20 hover:bg-indigo-500/30"
               onClick={onConnect}
@@ -158,9 +122,14 @@ export default function Settings() {
             {loading
               ? "Checking…"
               : status.connected
-              ? `Connected${status.email ? ` as ${status.email}` : ""}${
+              ? `Connected${
+                  status.email ? ` as ${status.email}` : ""
+                }${
                   typeof status.expiresIn === "number"
-                    ? ` — token ~${Math.max(0, Math.floor(status.expiresIn / 60))} min left`
+                    ? ` — expires in ~${Math.max(
+                        0,
+                        Math.floor(status.expiresIn / 60)
+                      )} min`
                     : ""
                 }`
               : "Not connected"}
