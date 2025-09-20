@@ -1,11 +1,21 @@
 // /pages/api/google/oauth/logout.js
-import { revokeFromCookie } from "@/lib/googleClient";
+import cookie from "cookie";
 
-export default async function handler(req, res) {
+export default function handler(req, res) {
   try {
-    const out = await revokeFromCookie(req, res);
-    res.status(200).json({ ok: true, ...out });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: String(err) });
+    const name = process.env.APP_COOKIE_NAME || "amply_google";
+    res.setHeader(
+      "Set-Cookie",
+      cookie.serialize(name, "", {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 0,
+      })
+    );
+    res.status(200).json({ ok: true });
+  } catch (e) {
+    res.status(200).json({ ok: false, error: e.message });
   }
 }
