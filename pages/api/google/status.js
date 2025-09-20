@@ -1,11 +1,11 @@
 // /pages/api/google/status.js
-import { safeDiag } from "../../../lib/googleClient";
+import { status, safeDiag } from "@/lib/googleClient";
 
-export default function handler(req, res) {
-  const d = safeDiag(req);
-  res.status(200).json({
-    ok: true,
-    ...d,
-    connected: Boolean(d.hasRefresh || d.hasAccess),
-  });
+export default async function handler(req, res) {
+  try {
+    const s = await status(req);
+    res.status(200).json({ ok: true, status: s, diag: safeDiag() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
 }
