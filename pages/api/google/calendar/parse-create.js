@@ -13,17 +13,12 @@ export default async function handler(req, res) {
   }
 
   const { text, timezone } = req.body || {};
-  const tz =
-    typeof timezone === "string" && timezone.trim()
-      ? timezone.trim()
-      : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-
-  if (!text || !text.trim()) {
+  if (!text) {
     res.status(400).json({ ok: false, message: "Missing 'text' in body" });
     return;
   }
 
-  // Ensure user is connected
+  // Ensure we have tokens
   const { oauth2, ready } = await hydrateClientFromCookie(req, res);
   if (!ready) {
     res.status(401).json({
@@ -35,32 +30,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ✅ correct call signature
-    const pf = parseFocus(text, new Date(), tz);
-    if (!pf.ok) {
-      res
-        .status(400)
-        .json({ ok: false, message: pf.message || "Could not parse" });
-      return;
-    }
-
-    const { title, startISO, endISO, timezone: parsedTz } = pf.parsed;
+    // IMPORTANT: pass "now" explicitly so chrono can interpret "tomorrow/next Wed" correctly
+    const now = new Date();
+    const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const parsed = parseFocus(text, now, tz);
 
     const cal = calendarClient(oauth2);
     const created = await cal.events.insert({
       calendarId: "primary",
       requestBody: {
-        summary: title,
-        start: { dateTime: startISO, timeZone: parsedTz },
-        end: { dateTime: endISO, timeZone: parsedTz },
+        summary: parsed.title,
+        start: { dateTime: parsed.startISO, timeZone: parsed.timezone },
+        end: { dateTime: parsed.endISO, timeZone: parsed.timezone },
       },
     });
 
-    res.status(200).json({ ok: true, parsed: pf.parsed, created: created.data });
+    res.status(200).json({ ok: true, parsed, created: created.data });
   } catch (err) {
-    res.status(500).json({
+    res.status(200).json({
       ok: false,
-      message: "Failed to parse or create",
+      message: "Parse/Create failed",
       error: String(err?.message || err),
     });
   }
