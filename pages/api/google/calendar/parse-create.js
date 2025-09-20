@@ -1,4 +1,6 @@
-// pages/api/google/calendar/parse-create.js
+// /pages/api/google/calendar/parse-create.js
+// Creates a calendar event from free text using the shared parseFocus() util.
+
 import parseFocus from "../../../../utils/parseFocus";
 import {
   hydrateClientFromCookie,
@@ -18,7 +20,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Ensure we have tokens
   const { oauth2, ready } = await hydrateClientFromCookie(req, res);
   if (!ready) {
     res.status(401).json({
@@ -30,12 +31,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // IMPORTANT: pass "now" explicitly so chrono can interpret "tomorrow/next Wed" correctly
-    const now = new Date();
-    const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    const parsed = parseFocus(text, now, tz);
-
+    const parsed = parseFocus(text, { timezone });
     const cal = calendarClient(oauth2);
+
     const created = await cal.events.insert({
       calendarId: "primary",
       requestBody: {
@@ -49,7 +47,10 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(200).json({
       ok: false,
-      message: "Parse/Create failed",
+      message:
+        err?.message === "Couldn’t parse into a date/time"
+          ? err.message
+          : "Failed to parse or create",
       error: String(err?.message || err),
     });
   }
