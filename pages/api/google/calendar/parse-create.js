@@ -1,33 +1,30 @@
 // /pages/api/google/calendar/parse-create.js
-// Creates a calendar event from free text using the shared parseFocus() util.
-
-import parseFocus from "../../../../utils/parseFocus";
+import parseFocus from "@/utils/parseFocus";
 import {
   hydrateClientFromCookie,
   calendarClient,
-} from "../../../../lib/googleClient";
+} from "@/lib/googleClient";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    res.status(405).json({ ok: false, message: "Method not allowed" });
-    return;
+    return res.status(405).json({ ok: false, message: "Method not allowed" });
   }
 
   const { text, timezone } = req.body || {};
   if (!text) {
-    res.status(400).json({ ok: false, message: "Missing 'text' in body" });
-    return;
+    return res
+      .status(400)
+      .json({ ok: false, message: "Missing 'text' in body" });
   }
 
   const { oauth2, ready } = await hydrateClientFromCookie(req, res);
   if (!ready) {
-    res.status(401).json({
+    return res.status(401).json({
       ok: false,
       message: "Not connected",
-      hint: "Open Settings → Connect Google; then refresh.",
+      hint: "Open Settings → Connect Google; then Refresh.",
     });
-    return;
   }
 
   try {
@@ -43,14 +40,11 @@ export default async function handler(req, res) {
       },
     });
 
-    res.status(200).json({ ok: true, parsed, created: created.data });
+    return res.status(200).json({ ok: true, parsed, created: created.data });
   } catch (err) {
-    res.status(200).json({
+    return res.status(500).json({
       ok: false,
-      message:
-        err?.message === "Couldn’t parse into a date/time"
-          ? err.message
-          : "Failed to parse or create",
+      message: "Failed to parse or create",
       error: String(err?.message || err),
     });
   }
