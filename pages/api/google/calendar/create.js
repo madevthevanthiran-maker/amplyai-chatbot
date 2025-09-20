@@ -1,3 +1,4 @@
+// /pages/api/google/calendar/create.js
 import { calendarClientFromCookie } from "../../../../lib/googleClient";
 import parseFocus, { parseFocus as parseFocusNamed } from "../../../../utils/parseFocus";
 
@@ -5,12 +6,25 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end("Method Not Allowed");
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
-    const input = body?.text || "";
-    const tz = body?.tz;
-
-    // Ensure import works in either form
     const pf = typeof parseFocus === "function" ? parseFocus : parseFocusNamed;
-    const parsed = pf(input, { tz });
+
+    let parsed = null;
+
+    if (body.parsed && typeof body.parsed === "object") {
+      // Trust a pre-parsed shape from the Settings form
+      parsed = {
+        ok: true,
+        title: body.parsed.title,
+        start: body.parsed.start,
+        end: body.parsed.end,
+        tz: body.parsed.tz || "UTC",
+        allDay: !!body.parsed.allDay,
+        intent: body.parsed.intent || "event",
+      };
+    } else {
+      const text = body.text || "";
+      parsed = pf(text, { tz: body.tz });
+    }
 
     if (!parsed?.ok) {
       return res.status(200).json({ ok: false, error: "Parse failed" });
@@ -27,12 +41,13 @@ export default async function handler(req, res) {
     const event = {
       summary: parsed.title,
       start: parsed.allDay
-        ? { date: parsed.start.slice(0, 10) } // all-day uses date only
+        ? { date: parsed.start.slice(0, 10) }
         : { dateTime: parsed.start, timeZone: parsed.tz },
       end: parsed.allDay
         ? { date: parsed.end.slice(0, 10) }
         : { dateTime: parsed.end, timeZone: parsed.tz },
       description: `[AmplyAI] intent=${parsed.intent}`,
+      location: body.parsed?.location || undefined,
     };
 
     const { data } = await c.calendar.events.insert({
