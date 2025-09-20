@@ -1,63 +1,45 @@
-// pages/api/google/calendar/create.js
-import { calendarClientFromCookie } from "../../../../lib/googleClient";
-import parseFocusDefault, { parseFocus as parseFocusNamed } from "../../../../utils/parseFocus";
+// /pages/api/google/calendar/create.js
+import { ensureCalendarClient } from "../../../../lib/googleClient";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end("Method Not Allowed");
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ ok: false, message: "Use POST" });
+  }
+
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+    const { parsed, text } = req.body || {};
+    const client = await ensureCalendarClient(req, res);
 
-    // Choose whichever export exists
-    const pf = typeof parseFocusDefault === "function" ? parseFocusDefault : parseFocusNamed;
-
-    let parsed;
-    if (body.parsed) {
-      parsed = {
-        ok: true,
-        title: body.parsed.title,
-        start: body.parsed.start,
-        end: body.parsed.end,
-        tz: body.parsed.tz || "UTC",
-        allDay: !!body.parsed.allDay,
-        intent: body.parsed.intent || "event",
-        location: body.parsed.location || undefined,
-      };
-    } else {
-      parsed = pf(body.text || "", { tz: body.tz });
-    }
-
-    if (!parsed?.ok) {
-      return res.status(200).json({ ok: false, error: "Parse failed" });
-    }
-
-    const c = await calendarClientFromCookie(req);
-    if (!c.ok) {
-      return res.status(200).json({
+    if (!parsed?.title || !parsed?.startISO || !parsed?.endISO) {
+      return res.status(400).json({
         ok: false,
-        error: "No access, refresh token, API key or refresh handler callback is set.",
+        message: "Missing parsed.title/startISO/endISO",
+        hint: "Pass a parsed payload from parseFocus() or your form.",
       });
     }
 
     const event = {
       summary: parsed.title,
-      start: parsed.allDay
-        ? { date: parsed.start.slice(0, 10) }
-        : { dateTime: parsed.start, timeZone: parsed.tz },
-      end: parsed.allDay
-        ? { date: parsed.end.slice(0, 10) }
-        : { dateTime: parsed.end, timeZone: parsed.tz },
-      description: `[AmplyAI] intent=${parsed.intent}`,
-      location: parsed.location,
+      start: { dateTime: parsed.startISO, timeZone: parsed.timezone || "UTC" },
+      end: { dateTime: parsed.endISO, timeZone: parsed.timezone || "UTC" },
+      location: parsed.location || undefined,
+      description: text || undefined,
     };
 
-    const { data } = await c.calendar.events.insert({
+    const created = await client.events.insert({
       calendarId: "primary",
       requestBody: event,
     });
 
-    return res.status(200).json({ ok: true, event: data, parsed });
-  } catch (e) {
-    console.error("[calendar/create] error", e);
-    return res.status(200).json({ ok: false, error: e.message || String(e) });
+    res.status(200).json({ ok: true, created: created.data });
+  } catch (err) {
+    res.status(200).json({
+      ok: false,
+      message: String(err?.message || err),
+      hint:
+        "If this says unauthorized/invalid_grant, re-connect Google. " +
+        "Make sure your OAuth client is type=Web, and redirect URI matches exactly.",
+    });
   }
 }
