@@ -1,229 +1,154 @@
 // utils/parseFocus.js
 //
-// Robust natural-language parser for calendar-ish prompts.
-// No external deps. Handles relative dates ("tomorrow", "next wed"),
-// explicit dates (DD/MM[/YYYY] or YYYY-MM-DD), time ranges ("2-4pm"),
-// single times + duration ("9am for 2 hours"), 24h times, and titles after "—".
+// Robust natural-language time parser for Focus prompts.
+// Examples supported:
+//  - "block 2-4pm tomorrow — Deep Work thesis"
+//  - "next wed 14:30 call with supplier"
+//  - "all day tomorrow: study retreat"
+//  - "this fri 7pm-9pm dinner with family"
+//  - "meeting on 12/10 9am for 2 hours"
+//  - "tomorrow 10am catch up - Alice"
 //
-// Usage: const out = parseFocus("block 2-4pm tomorrow — Deep Work thesis", new Date(), "Asia/Singapore")
-// Returns: { ok: true, parsed: { title, startISO, endISO, timezone } }  OR  { ok:false, message }
+// Returns: { title, startISO, endISO, timezone }
 
-const WD = ["sun","mon","tue","wed","thu","fri","sat"];
+import * as chrono from "chrono-node";
 
-function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-
-// Make a date in a given timezone keeping local wall clock by offset math
-function toZonedISO(d, tz) {
-  try {
-    // Use Intl to get parts then rebuild ISO in that TZ
-    const fmt = new Intl.DateTimeFormat("en-GB", {
-      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-    });
-    const parts = Object.fromEntries(fmt.formatToParts(d).map(p => [p.type, p.value]));
-    const iso = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
-    return new Date(iso + "Z"); // make Date from UTC-ish string; we only need ISO later
-  } catch {
-    return d; // fallback
+/**
+ * Parse a focus-like sentence into a calendar range + title.
+ *
+ * @param {string} text - user input
+ * @param {Date}   [now=new Date()] - reference date
+ * @param {string} [timezone='UTC']  - IANA TZ for the event
+ * @returns {{title: string, startISO: string, endISO: string, timezone: string}}
+ * @throws on failure to find a time range or start time
+ */
+export default function parseFocus(text, now = new Date(), timezone = "UTC") {
+  if (!text || typeof text !== "string") {
+    throw new Error("No text to parse.");
   }
-}
 
-function dateAtLocal(tz, year, monthIndex, day, hh=0, mm=0) {
-  // Build local-meaningful time by formatting to string in tz
-  const d = new Date(Date.UTC(year, monthIndex, day, hh, mm, 0));
-  return toZonedISO(d, tz);
-}
+  const raw = text.trim();
 
-function nextWeekday(base, targetDow, includeToday=false) {
-  const bd = new Date(base);
-  const diff = (targetDow - bd.getDay() + 7) % 7;
-  const add = diff === 0 && !includeToday ? 7 : diff;
-  bd.setDate(bd.getDate() + add);
-  return bd;
-}
+  // Common separators to split title from time chunk, if present.
+  const SEP = /—|–|-|:|\u2014|\u2013/; // em/en dash, hyphen, colon
+  // We'll try to detect a time range early (2-4pm, 14:00-16:00, 7pm–9pm)
+  const rangeMatch = raw.match(
+    /(\b\d{1,2}(:\d{2})?\s?(am|pm)?)[\s]*[-–—to]+[\s]*(\d{1,2}(:\d{2})?\s?(am|pm)?)\b/i
+  );
 
-function parseExplicitDate(token) {
-  // Supports DD/MM(/YYYY), D-M, YYYY-MM-DD
-  let m;
-  if ((m = token.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) {
-    const y = +m[1], mo = clamp(+m[2],1,12)-1, d = clamp(+m[3],1,31);
-    return { y, mo, d };
-  }
-  if ((m = token.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?$/))) {
-    // Assume DD/MM in SG/AU style; if day <=12 and month >12 we'd still treat DD/MM
-    const d = +m[1], mo = +m[2], y = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : new Date().getFullYear();
-    return { y, mo: clamp(mo,1,12)-1, d: clamp(d,1,31) };
-  }
-  return null;
-}
+  // Title heuristic: prefer the part after the first dash/colon if it looks like a name/thing
+  const splitBySep = raw.split(SEP);
+  // If user used " — " or ":" the part after often is the title
+  let candidateTitle =
+    splitBySep.length >= 2 ? splitBySep.slice(1).join(" ").trim() : "";
 
-function parseDuration(s) {
-  const m = s.match(/\bfor\s+(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)\b/i);
-  if (!m) return null;
-  const n = parseFloat(m[1]);
-  const unit = m[2].toLowerCase();
-  if (unit.startsWith("h")) return Math.round(n*60);
-  return Math.round(n); // minutes
-}
-
-function parseTimespan(text) {
-  // Accept: "2-4pm", "2pm-4pm", "14:00-16:00", "14-16", "9:15-10", "9am–11am"
-  const dash = "[\\-–—]";
-  const tm = "([01]?\\d|2[0-3])(?::([0-5]\\d))?";
-  const ampm = "\\s*(am|pm)?";
-  const re = new RegExp(`\\b${tm}${ampm}\\s*${dash}\\s*${tm}${ampm}\\b`, "i");
-  const m = text.match(re);
-  if (!m) return null;
-
-  let sh = +m[1], sm = m[2] ? +m[2] : 0, sap = (m[3]||"").toLowerCase();
-  let eh = +m[4], em = m[5] ? +m[5] : 0, eap = (m[6]||"").toLowerCase();
-
-  if (sap) { // normalize 12-hour
-    if (sap === "pm" && sh < 12) sh += 12;
-    if (sap === "am" && sh === 12) sh = 0;
-  }
-  if (eap) {
-    if (eap === "pm" && eh < 12) eh += 12;
-    if (eap === "am" && eh === 12) eh = 0;
-  }
-  // If only end has am/pm (e.g., "2-4pm"), infer start by mirroring period
-  if (!sap && eap) {
-    if (eap === "pm" && sh < 12) sh += 12;
-    if (eap === "am" && sh === 12) sh = 0;
-  }
-  return { sh, sm, eh, em, matchText: m[0] };
-}
-
-function parseSingleTime(text) {
-  // Accept "14:30", "9", "9am", "9:15pm"
-  const m = text.match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)?\b/i);
-  if (!m) return null;
-  let h = +m[1], min = m[2] ? +m[2] : 0, ap = (m[3]||"").toLowerCase();
-  if (ap === "pm" && h < 12) h += 12;
-  if (ap === "am" && h === 12) h = 0;
-  return { h, min, matchText: m[0] };
-}
-
-function extractTitle(input, removedSpans) {
-  // If user used an em dash "—" (or hyphen) as title separator, prefer text after it
-  const dashIdx = input.indexOf("—");
-  if (dashIdx >= 0 && dashIdx < input.length - 1) {
-    const t = input.slice(dashIdx + 1).trim();
-    if (t) return t;
-  }
-  // Remove matched date/time snippets from the string, use remainder as title
-  let s = input;
-  removedSpans.forEach(txt => { s = s.replace(txt, " "); });
-  // scrub common keywords
-  s = s
-    .replace(/\b(block|meeting|call|on|at|from|to|until|tmr|tomorrow|today|next|this|mon|tue|wed|thu|fri|sat|sun|am|pm|for)\b/gi, " ")
-    .replace(/\s{2,}/g, " ")
+  // Remove common verbs/noise from beginning
+  candidateTitle = candidateTitle
+    .replace(/^(block|schedule|meeting|meet|call|focus|event)\b[\s:,-]*/i, "")
     .trim();
-  return s || "Calendar item";
-}
 
-export default function parseFocus(input, now = new Date(), timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC") {
-  try {
-    const text = String(input).trim();
-    if (!text) return { ok: false, message: "Empty input" };
+  // If we didn't get a reasonable title, try "after the date/time" by cutting out the first parsed range later.
 
-    const lower = text.toLowerCase();
+  // Build chrono options: forward-dating to avoid past dates.
+  const options = { forwardDate: true };
 
-    // 1) Date detection
-    let targetDate = null;
-    // today / tomorrow
-    if (/\btoday\b/i.test(lower)) {
-      targetDate = new Date(now);
-    } else if (/\b(tmr|tomorrow)\b/i.test(lower)) {
-      targetDate = new Date(now);
-      targetDate.setDate(targetDate.getDate() + 1);
-    } else {
-      // next/this weekday
-      const mwd = lower.match(/\b(next|this)\s+(sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)\b/);
-      if (mwd) {
-        const which = mwd[1]; let wd = mwd[2].slice(0,3); if (wd === "tue") wd = "tue";
-        const dow = WD.indexOf(wd);
-        targetDate = which === "this" ? nextWeekday(now, dow, true) : nextWeekday(now, dow, false);
-      }
-    }
+  // 1) Try full parse once to capture any date/time expressions.
+  const first = chrono.parse(raw, now, options);
 
-    // explicit date token present?
-    if (!targetDate) {
-      const md = lower.match(/\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/);
-      if (md) {
-        const ed = parseExplicitDate(md[1]);
-        if (ed) targetDate = new Date(ed.y, ed.mo, ed.d);
-      }
-    }
-
-    // default date = today if still not found and we do have a time
-    let hadTime = false;
-
-    // 2) Time detection (range, single+duration, single)
-    const removed = [];
-    let sh=9, sm=0, eh=10, em=0; // defaults if single time without duration
-
-    const span = parseTimespan(lower);
-    if (span) {
-      hadTime = true;
-      ({sh,sm,eh,em} = span);
-      removed.push(span.matchText);
-    } else {
-      const durMin = parseDuration(lower);
-      const st = parseSingleTime(lower);
-      if (st) {
-        hadTime = true;
-        sh = st.h; sm = st.min;
-        removed.push(st.matchText);
-        if (durMin && durMin > 0) {
-          const total = sh*60 + sm + durMin;
-          eh = Math.floor(total/60); em = total % 60;
-          removed.push((lower.match(/\bfor\s+\d+(?:\.\d+)?\s*(?:h|hr|hrs|hour|hours|m|min|mins|minute|minutes)\b/i)||[""])[0]);
-        } else {
-          // default 60 min if no explicit duration
-          const total = sh*60 + sm + 60;
-          eh = Math.floor(total/60); em = total % 60;
-        }
-      } else if (/\ball[-\s]?day\b/i.test(lower)) {
-        hadTime = true;
-        sh = 0; sm = 0; eh = 23; em = 59;
-        removed.push((lower.match(/\ball[-\s]?day\b/i) || [""])[0]);
-      }
-    }
-
-    // If we never saw a date:
-    if (!targetDate) {
-      if (!hadTime) {
-        return { ok: false, message: "Couldn't find a date or time in your text." };
-      }
-      // default to today if time is present
-      targetDate = new Date(now);
-    }
-
-    // Build start/end in the requested timezone
-    const y = targetDate.getFullYear();
-    const mo = targetDate.getMonth();
-    const d = targetDate.getDate();
-
-    const startLocal = dateAtLocal(timezone, y, mo, d, sh, sm);
-    const endLocal   = dateAtLocal(timezone, y, mo, d, eh, em);
-
-    // 3) Title extraction
-    // Add common date/time snippets to removed for cleaner title
-    const dateToken = lower.match(/\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|today|tomorrow|tmr|(next|this)\s+(sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat))\b/i);
-    if (dateToken) removed.push(dateToken[0]);
-    const title = extractTitle(text, removed);
-
-    return {
-      ok: true,
-      parsed: {
-        title,
-        startISO: new Date(startLocal.getTime() - startLocal.getTimezoneOffset()*60000).toISOString(),
-        endISO:   new Date(endLocal.getTime()   - endLocal.getTimezoneOffset()*60000).toISOString(),
-        timezone
-      }
-    };
-  } catch (e) {
-    return { ok: false, message: `Parse failed: ${e.message || e}` };
+  if (!first || first.length === 0) {
+    // Last-ditch: maybe user typed only "tomorrow 2pm Deep work"
+    // If chrono can't find anything, fail out.
+    throw new Error("Could not locate any date/time in the text.");
   }
+
+  // We want a start and (if possible) end.
+  // Strategy:
+  //  - If we detected an explicit "X-Y" range, parse start and end separately around that match
+  //  - Else if chrono produced a result with a known end, use it
+  //  - Else assume 60 minutes default
+  let start = null;
+  let end = null;
+  let resultUsed = null;
+
+  // Pick the earliest chrono result that has a start.
+  resultUsed = first[0];
+
+  // If explicit range pattern exists, resolve both ends with chrono individually using same reference.
+  if (rangeMatch) {
+    const startText = rangeMatch[1];
+    const endText = rangeMatch[4];
+
+    // Combine with surrounding context if only times were provided (so "tomorrow 2-4pm" works)
+    // We remove the range portion and keep the rest to act as context (e.g., "tomorrow")
+    const prefix = raw.replace(rangeMatch[0], startText); // put start where range was for context
+    const ctxRes = chrono.parse(prefix, now, options);
+    const ctx = ctxRes?.[0]?.start?.date ? ctxRes[0] : resultUsed;
+
+    const startRes = chrono.parse(startText, ctx?.start?.date() ?? now, options);
+    const endRes = chrono.parse(endText, ctx?.start?.date() ?? now, options);
+
+    if (startRes?.[0]?.start?.date && endRes?.[0]?.start?.date) {
+      start = startRes[0].start.date();
+      end = endRes[0].start.date();
+
+      // If end <= start (e.g., "11-1pm") and chrono didn't add am/pm correctly, bump end by 12h or 24h
+      if (end.getTime() <= start.getTime()) {
+        // Try add 12h; if still <= then add 24h
+        end = new Date(end.getTime() + 12 * 60 * 60 * 1000);
+        if (end.getTime() <= start.getTime()) {
+          end = new Date(end.getTime() + 12 * 60 * 60 * 1000);
+        }
+      }
+    }
+  }
+
+  // If we still don't have start/end, use the chrono result as-is
+  if (!start) {
+    start = resultUsed.start?.date?.() ?? null;
+  }
+  if (!end) {
+    if (resultUsed.end?.date) {
+      end = resultUsed.end.date();
+    } else {
+      // Default duration = 60 min
+      end = start ? new Date(start.getTime() + 60 * 60 * 1000) : null;
+    }
+  }
+
+  if (!start || !end) {
+    throw new Error("Could not resolve start/end times.");
+  }
+
+  // Derive a good title if we still don't have one.
+  // Remove the recognized date/time substring from the original text.
+  let title = candidateTitle;
+  if (!title) {
+    // Remove first matched span text if available, else just remove known tokens
+    const removeSpan =
+      resultUsed?.text ??
+      rangeMatch?.[0] ??
+      ""; // fallback minimal
+    const stripped = raw.replace(removeSpan, "").replace(SEP, " ").trim();
+    title = stripped
+      .replace(/^(block|schedule|meeting|meet|call|focus|event)\b[\s:,-]*/i, "")
+      .trim();
+  }
+
+  // Guard title fallback
+  if (!title) {
+    // Try "after time chunk"
+    const after = splitBySep.slice(1).join(" ").trim();
+    title = after || "Focus block";
+  }
+
+  // Normalize to ISO strings
+  const startISO = start.toISOString();
+  const endISO = end.toISOString();
+
+  return {
+    title,
+    startISO,
+    endISO,
+    timezone,
+  };
 }
