@@ -1,10 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+// components/Settings.jsx
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
-
-const FEATURE_CALENDAR =
-  typeof process !== "undefined"
-    ? (process.env.NEXT_PUBLIC_FEATURE_CALENDAR ?? "true") !== "false"
-    : true;
 
 export default function Settings() {
   const router = useRouter();
@@ -13,9 +9,9 @@ export default function Settings() {
     connected: false,
     email: null,
     expiresIn: null,
-    scopesOk: false,
+    scopesOk: null,
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -24,60 +20,104 @@ export default function Settings() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("10:00");
-  const [tz, setTz] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  const [tz, setTz] = useState(
+    (typeof Intl !== "undefined" &&
+      Intl.DateTimeFormat().resolvedOptions().timeZone) ||
+      "UTC"
+  );
   const [location, setLocation] = useState("Remote");
 
   const sampleParsed = useMemo(() => {
     const startISO = new Date(`${date}T${start}:00`).toISOString();
     const endISO = new Date(`${date}T${end}:00`).toISOString();
-    return { title, startISO, endISO, timezone: tz, location };
+    return {
+      title,
+      start: startISO,
+      end: endISO,
+      tz,
+      location,
+      allDay: false,
+      intent: "event",
+    };
   }, [title, date, start, end, tz, location]);
 
-  async function refreshStatus() {
+  const refreshStatus = useCallback(async () => {
     setLoading(true);
     try {
       const r = await fetch("/api/google/status");
       const j = await r.json();
-      setStatus(j);
+      // Accept both shapes:
+      // {ok:true, status:{connected,...}}  OR  {connected, ...}
+      const s = j?.status ?? j ?? {};
+      setStatus({
+        connected: !!s.connected,
+        email: s.email ?? null,
+        expiresIn: s.expiresIn ?? null,
+        scopesOk: s.scopesOk ?? null,
+      });
+    } catch {
+      setStatus((prev) => ({ ...prev, connected: false }));
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     refreshStatus();
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      if (url.searchParams.has("gcb")) {
-        url.searchParams.delete("gcb");
-        window.history.replaceState({}, "", url.toString());
+
+    // Listen for popup -> postMessage from /api/google/oauth/callback
+    const onMsg = (e) => {
+      if (e?.data?.source === "amply-google" && e?.data?.ok) {
+        setTimeout(refreshStatus, 300);
       }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [refreshStatus]);
+
+  async function onConnect() {
+    try {
+      const r = await fetch("/api/google/oauth/start");
+      const j = await r.json();
+      if (!j.ok || !j.url) throw new Error(j.error || "No auth URL");
+      const w = 520,
+        h = 640;
+      const y = window.top.outerHeight / 2 + window.top.screenY - h / 2;
+      const x = window.top.outerWidth / 2 + window.top.screenX - w / 2;
+      window.open(j.url, "amply-gcal", `width=${w},height=${h},left=${x},top=${y}`);
+    } catch (e) {
+      alert("Failed to start Google sign-in: " + e.message);
     }
-  }, []);
+  }
 
-  const onConnect = () => {
-    window.location.href = "/api/google/oauth/start?returnTo=/settings";
-  };
+  async function onDisconnect() {
+    try {
+      const r = await fetch("/api/google/oauth/logout", { method: "POST" });
+      if (!r.ok) throw new Error("Logout failed");
+    } catch (e) {
+      // best effort
+      console.warn(e);
+    } finally {
+      refreshStatus();
+    }
+  }
 
-  const onDisconnect = () => {
-    window.location.href = "/api/google/oauth/logout?returnTo=/settings";
-  };
-
-  const onBackToChat = () => {
-    router.push("/chat");
-  };
+  const onBackToChat = () => router.push("/chat");
 
   async function createSample() {
     try {
       setCreating(true);
       setResult(null);
+      // Back end now accepts either {text} or {parsed}
       const r = await fetch("/api/google/calendar/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ parsed: sampleParsed }),
       });
       const j = await r.json();
-      setResult(j);
+      setResult(j.ok ? { ok: true, created: j.event } : { ok: false, message: j.error, hint: j.hint });
+    } catch (e) {
+      setResult({ ok: false, message: e.message });
     } finally {
       setCreating(false);
     }
@@ -87,7 +127,7 @@ export default function Settings() {
     <div className="max-w-3xl mx-auto p-6">
       <h1 className="text-2xl font-semibold mb-4">Settings</h1>
 
-      {/* Google Calendar Section */}
+      {/* Google Calendar */}
       <section className="mb-8 rounded-xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-center justify-between">
           <h2 className="font-medium">Google Calendar</h2>
@@ -120,7 +160,7 @@ export default function Settings() {
               : status.connected
               ? `Connected${status.email ? ` as ${status.email}` : ""}${
                   typeof status.expiresIn === "number"
-                    ? ` — expires in ~${Math.max(0, Math.floor(status.expiresIn / 60))} min`
+                    ? ` — token ~${Math.max(0, Math.floor(status.expiresIn / 60))} min left`
                     : ""
                 }`
               : "Not connected"}
@@ -134,7 +174,7 @@ export default function Settings() {
         </div>
       </section>
 
-      {/* Sample Event Section */}
+      {/* Sample Event */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-4">
         <h2 className="font-medium mb-3">Create a sample event</h2>
 
@@ -206,21 +246,22 @@ export default function Settings() {
           >
             {creating ? "Creating…" : "Create event"}
           </button>
-          {result && (result.ok ? (
-            <a
-              className="text-emerald-300 underline"
-              href={result.created?.htmlLink || "#"}
-              target="_blank"
-              rel="noreferrer"
-            >
-              ✓ Created (open in Calendar)
-            </a>
-          ) : (
-            <span className="text-rose-300">
-              ✗ {result.message || "Failed to create event"}
-              {result.hint ? ` — ${result.hint}` : ""}
-            </span>
-          ))}
+          {result &&
+            (result.ok ? (
+              <a
+                className="text-emerald-300 underline"
+                href={result.created?.htmlLink || "#"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ✓ Created (open in Calendar)
+              </a>
+            ) : (
+              <span className="text-rose-300">
+                ✗ {result.message || "Failed to create event"}
+                {result.hint ? ` — ${result.hint}` : ""}
+              </span>
+            ))}
         </div>
       </section>
 
