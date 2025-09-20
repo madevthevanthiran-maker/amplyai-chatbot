@@ -1,17 +1,20 @@
 // /pages/api/google/oauth/start.js
 import { getAuthUrl } from "../../../../lib/googleClient";
 
-export default async function handler(req, res) {
+export default function handler(req, res) {
   try {
-    const returnTo = (req.query.returnTo as string) || "/settings";
+    const returnTo = typeof req.query.returnTo === "string" ? req.query.returnTo : "/settings";
     const url = getAuthUrl({ returnTo });
-    res.status(200).json({ ok: true, url });
+    // Redirect directly to Google (no JSON)
+    res.writeHead(302, { Location: url });
+    res.end();
   } catch (err) {
     res.status(200).json({
       ok: false,
       where: "oauth/start",
       error: String(err?.message || err),
-      hint: "Verify GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI are set and match Google Console.",
+      hint:
+        "Check GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI and that the redirect matches Google Console exactly.",
     });
   }
 }
