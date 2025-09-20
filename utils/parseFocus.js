@@ -1,154 +1,154 @@
-// utils/parseFocus.js
-//
-// Robust natural-language time parser for Focus prompts.
-// Examples supported:
-//  - "block 2-4pm tomorrow — Deep Work thesis"
-//  - "next wed 14:30 call with supplier"
-//  - "all day tomorrow: study retreat"
-//  - "this fri 7pm-9pm dinner with family"
-//  - "meeting on 12/10 9am for 2 hours"
-//  - "tomorrow 10am catch up - Alice"
-//
-// Returns: { title, startISO, endISO, timezone }
+// /utils/parseFocus.js
+// Robust natural-language calendar parser using chrono-node.
+// Exported as a DEFAULT function (important: import with `import parseFocus from "@/utils/parseFocus"`)
 
 import * as chrono from "chrono-node";
 
 /**
- * Parse a focus-like sentence into a calendar range + title.
- *
- * @param {string} text - user input
- * @param {Date}   [now=new Date()] - reference date
- * @param {string} [timezone='UTC']  - IANA TZ for the event
- * @returns {{title: string, startISO: string, endISO: string, timezone: string}}
- * @throws on failure to find a time range or start time
+ * Normalize common range separators to a single hyphen.
  */
-export default function parseFocus(text, now = new Date(), timezone = "UTC") {
+function normalizeRange(raw) {
+  if (!raw) return "";
+  return raw.replace(/[–—−]/g, "-"); // en dash, em dash, minus → hyphen
+}
+
+/**
+ * Try to extract a human title after an em dash / hyphen separator.
+ * e.g. "block 2-4pm tomorrow — Deep Work thesis" -> "Deep Work thesis"
+ */
+function extractTitle(text) {
+  const m =
+    text.match(/\s[-–—]\s*(.+)$/) || // space + dash + title
+    text.match(/—\s*(.+)$/) ||        // em dash
+    text.match(/-\s*(.+)$/);          // hyphen
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Convert Date -> ISO string safely.
+ */
+function toISO(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) {
+    throw new Error("Invalid Date");
+  }
+  return d.toISOString();
+}
+
+/**
+ * Parse a time range like "2-4pm" or "14:00-16:00".
+ * Returns { start: Date, end: Date } if possible, otherwise null.
+ */
+function parseInlineRange(text, refDate, timezone) {
+  const t = normalizeRange(text);
+
+  // Quick pattern for things like "2-4pm", "2pm-4pm", "14:00-16:00"
+  // We'll try to attach the same date (refDate) to both ends via chrono.
+  const m =
+    t.match(/\b(\d{1,2}(:\d{2})?\s*(am|pm)?)\s*-\s*(\d{1,2}(:\d{2})?\s*(am|pm)?)\b/i) ||
+    t.match(/\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b/i);
+
+  if (!m) return null;
+
+  const left = m[1];
+  const right = m[4];
+
+  // If the text also includes an anchored date keyword (tomorrow/next Wed/etc),
+  // keep it in the prompt so chrono can resolve the correct day.
+  // Otherwise, we prepend "today" so chrono doesn't spill to epoch.
+  const dayHint =
+    /\btoday\b|\btmr\b|\btomorrow\b|\bmon(day)?\b|\btue(s|sday)?\b|\bwed(nesday)?\b|\bthu(rsday)?\b|\bfri(day)?\b|\bsat(urday)?\b|\bsun(day)?\b|\bnext\b/i.test(
+      t
+    )
+      ? ""
+      : " today";
+
+  const leftParsed = chrono.parseDate(`${left}${dayHint}`, refDate, {
+    forwardDate: true,
+  });
+  const rightParsed = chrono.parseDate(`${right}${dayHint}`, refDate, {
+    forwardDate: true,
+  });
+
+  if (!leftParsed || !rightParsed) return null;
+
+  // Ensure end after start; if not, bump end by +1 day (rare but safe)
+  if (rightParsed <= leftParsed) {
+    rightParsed.setDate(rightParsed.getDate() + 1);
+  }
+
+  return { start: leftParsed, end: rightParsed };
+}
+
+/**
+ * Main parser — returns:
+ * {
+ *   title: string,
+ *   startISO: string,
+ *   endISO: string,
+ *   timezone: string
+ * }
+ */
+export default function parseFocus(text, opts = {}) {
   if (!text || typeof text !== "string") {
-    throw new Error("No text to parse.");
+    throw new Error("parseFocus: text is required");
   }
 
-  const raw = text.trim();
+  const timezone =
+    opts.timezone ||
+    (typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : "UTC");
 
-  // Common separators to split title from time chunk, if present.
-  const SEP = /—|–|-|:|\u2014|\u2013/; // em/en dash, hyphen, colon
-  // We'll try to detect a time range early (2-4pm, 14:00-16:00, 7pm–9pm)
-  const rangeMatch = raw.match(
-    /(\b\d{1,2}(:\d{2})?\s?(am|pm)?)[\s]*[-–—to]+[\s]*(\d{1,2}(:\d{2})?\s?(am|pm)?)\b/i
-  );
+  const refDate = new Date(); // now, let chrono resolve “tomorrow/next Wed”
 
-  // Title heuristic: prefer the part after the first dash/colon if it looks like a name/thing
-  const splitBySep = raw.split(SEP);
-  // If user used " — " or ":" the part after often is the title
-  let candidateTitle =
-    splitBySep.length >= 2 ? splitBySep.slice(1).join(" ").trim() : "";
+  // Try to detect range like "2-4pm" first and combine with any day hints in the text.
+  const tryRange = parseInlineRange(text, refDate, timezone);
 
-  // Remove common verbs/noise from beginning
-  candidateTitle = candidateTitle
-    .replace(/^(block|schedule|meeting|meet|call|focus|event)\b[\s:,-]*/i, "")
-    .trim();
+  // Let chrono resolve the general date/time(s) from the text.
+  // We use .parse (not parseDate) to get start and end from a single pass if present.
+  const results = chrono.parse(text, refDate, { forwardDate: true });
 
-  // If we didn't get a reasonable title, try "after the date/time" by cutting out the first parsed range later.
+  // Title: prefer tail-after-dash; else if result has a known plaintext after time, fallback to whole text
+  const title = extractTitle(text) || text.trim();
 
-  // Build chrono options: forward-dating to avoid past dates.
-  const options = { forwardDate: true };
-
-  // 1) Try full parse once to capture any date/time expressions.
-  const first = chrono.parse(raw, now, options);
-
-  if (!first || first.length === 0) {
-    // Last-ditch: maybe user typed only "tomorrow 2pm Deep work"
-    // If chrono can't find anything, fail out.
-    throw new Error("Could not locate any date/time in the text.");
+  // Case A: explicit inline range recognized (e.g., "2-4pm tomorrow")
+  if (tryRange) {
+    return {
+      title,
+      startISO: toISO(tryRange.start),
+      endISO: toISO(tryRange.end),
+      timezone,
+    };
   }
 
-  // We want a start and (if possible) end.
-  // Strategy:
-  //  - If we detected an explicit "X-Y" range, parse start and end separately around that match
-  //  - Else if chrono produced a result with a known end, use it
-  //  - Else assume 60 minutes default
-  let start = null;
-  let end = null;
-  let resultUsed = null;
+  // Case B: chrono found a single or ranged result
+  if (results && results.length > 0) {
+    // Pick the first reasonable result
+    const r = results[0];
 
-  // Pick the earliest chrono result that has a start.
-  resultUsed = first[0];
+    const start = r.start ? r.start.date() : null;
+    const end = r.end ? r.end.date() : null;
 
-  // If explicit range pattern exists, resolve both ends with chrono individually using same reference.
-  if (rangeMatch) {
-    const startText = rangeMatch[1];
-    const endText = rangeMatch[4];
-
-    // Combine with surrounding context if only times were provided (so "tomorrow 2-4pm" works)
-    // We remove the range portion and keep the rest to act as context (e.g., "tomorrow")
-    const prefix = raw.replace(rangeMatch[0], startText); // put start where range was for context
-    const ctxRes = chrono.parse(prefix, now, options);
-    const ctx = ctxRes?.[0]?.start?.date ? ctxRes[0] : resultUsed;
-
-    const startRes = chrono.parse(startText, ctx?.start?.date() ?? now, options);
-    const endRes = chrono.parse(endText, ctx?.start?.date() ?? now, options);
-
-    if (startRes?.[0]?.start?.date && endRes?.[0]?.start?.date) {
-      start = startRes[0].start.date();
-      end = endRes[0].start.date();
-
-      // If end <= start (e.g., "11-1pm") and chrono didn't add am/pm correctly, bump end by 12h or 24h
-      if (end.getTime() <= start.getTime()) {
-        // Try add 12h; if still <= then add 24h
-        end = new Date(end.getTime() + 12 * 60 * 60 * 1000);
-        if (end.getTime() <= start.getTime()) {
-          end = new Date(end.getTime() + 12 * 60 * 60 * 1000);
-        }
-      }
+    if (start && end) {
+      return {
+        title,
+        startISO: toISO(start),
+        endISO: toISO(end),
+        timezone,
+      };
+    }
+    if (start) {
+      // If only a start is present but no end, default to +1 hour
+      const end1 = new Date(start.getTime() + 60 * 60 * 1000);
+      return {
+        title,
+        startISO: toISO(start),
+        endISO: toISO(end1),
+        timezone,
+      };
     }
   }
 
-  // If we still don't have start/end, use the chrono result as-is
-  if (!start) {
-    start = resultUsed.start?.date?.() ?? null;
-  }
-  if (!end) {
-    if (resultUsed.end?.date) {
-      end = resultUsed.end.date();
-    } else {
-      // Default duration = 60 min
-      end = start ? new Date(start.getTime() + 60 * 60 * 1000) : null;
-    }
-  }
-
-  if (!start || !end) {
-    throw new Error("Could not resolve start/end times.");
-  }
-
-  // Derive a good title if we still don't have one.
-  // Remove the recognized date/time substring from the original text.
-  let title = candidateTitle;
-  if (!title) {
-    // Remove first matched span text if available, else just remove known tokens
-    const removeSpan =
-      resultUsed?.text ??
-      rangeMatch?.[0] ??
-      ""; // fallback minimal
-    const stripped = raw.replace(removeSpan, "").replace(SEP, " ").trim();
-    title = stripped
-      .replace(/^(block|schedule|meeting|meet|call|focus|event)\b[\s:,-]*/i, "")
-      .trim();
-  }
-
-  // Guard title fallback
-  if (!title) {
-    // Try "after time chunk"
-    const after = splitBySep.slice(1).join(" ").trim();
-    title = after || "Focus block";
-  }
-
-  // Normalize to ISO strings
-  const startISO = start.toISOString();
-  const endISO = end.toISOString();
-
-  return {
-    title,
-    startISO,
-    endISO,
-    timezone,
-  };
+  // Case C: couldn’t resolve date/time
+  throw new Error("Couldn’t parse into a date/time");
 }
