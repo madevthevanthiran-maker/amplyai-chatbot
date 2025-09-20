@@ -1,17 +1,17 @@
-// /pages/api/google/calendar/create.js
+// pages/api/google/calendar/create.js
 import { calendarClientFromCookie } from "../../../../lib/googleClient";
-import parseFocus, { parseFocus as parseFocusNamed } from "../../../../utils/parseFocus";
+import parseFocusDefault, { parseFocus as parseFocusNamed } from "../../../../utils/parseFocus";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end("Method Not Allowed");
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
-    const pf = typeof parseFocus === "function" ? parseFocus : parseFocusNamed;
 
-    let parsed = null;
+    // Choose whichever export exists
+    const pf = typeof parseFocusDefault === "function" ? parseFocusDefault : parseFocusNamed;
 
-    if (body.parsed && typeof body.parsed === "object") {
-      // Trust a pre-parsed shape from the Settings form
+    let parsed;
+    if (body.parsed) {
       parsed = {
         ok: true,
         title: body.parsed.title,
@@ -20,10 +20,10 @@ export default async function handler(req, res) {
         tz: body.parsed.tz || "UTC",
         allDay: !!body.parsed.allDay,
         intent: body.parsed.intent || "event",
+        location: body.parsed.location || undefined,
       };
     } else {
-      const text = body.text || "";
-      parsed = pf(text, { tz: body.tz });
+      parsed = pf(body.text || "", { tz: body.tz });
     }
 
     if (!parsed?.ok) {
@@ -47,7 +47,7 @@ export default async function handler(req, res) {
         ? { date: parsed.end.slice(0, 10) }
         : { dateTime: parsed.end, timeZone: parsed.tz },
       description: `[AmplyAI] intent=${parsed.intent}`,
-      location: body.parsed?.location || undefined,
+      location: parsed.location,
     };
 
     const { data } = await c.calendar.events.insert({
