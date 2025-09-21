@@ -1,19 +1,25 @@
 // /utils/parseFocus.js
+// Robust natural-language calendar parser using chrono-node.
+// Exported as a DEFAULT function.
+
 import * as chrono from "chrono-node";
 
+/** Normalize common range separators to a single hyphen. */
 function normalizeRange(raw) {
   if (!raw) return "";
-  return raw.replace(/[–—−]/g, "-"); // normalize dash
+  return raw.replace(/[–—−]/g, "-"); // en dash, em dash, minus → hyphen
 }
 
+/** Extract title after an em dash / hyphen separator. */
 function extractTitle(text) {
   const m =
-    text.match(/\s[-–—]\s*(.+)$/) ||
-    text.match(/—\s*(.+)$/) ||
-    text.match(/-\s*(.+)$/);
+    text.match(/\s[-–—]\s*(.+)$/) || // space + dash + title
+    text.match(/—\s*(.+)$/) ||        // em dash
+    text.match(/-\s*(.+)$/);          // hyphen
   return m ? m[1].trim() : null;
 }
 
+/** Convert Date -> ISO string safely. */
 function toISO(d) {
   if (!(d instanceof Date) || isNaN(d.getTime())) {
     throw new Error("Invalid Date");
@@ -21,36 +27,35 @@ function toISO(d) {
   return d.toISOString();
 }
 
+/**
+ * Parse inline time range like "2-4pm" or "14:00-16:00".
+ * Returns { start: Date, end: Date } if found, else null.
+ */
 function parseInlineRange(text, refDate) {
   const t = normalizeRange(text);
 
-  // Match things like "2-4pm", "2pm-4pm", "14:00-16:00"
   const m =
     t.match(/\b(\d{1,2}(:\d{2})?\s*(am|pm)?)\s*-\s*(\d{1,2}(:\d{2})?\s*(am|pm)?)\b/i) ||
     t.match(/\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b/i);
 
   if (!m) return null;
 
-  let left = m[1];
-  let right = m[4];
+  const left = m[1];
+  const right = m[4];
 
-  // Carry over am/pm if only the right has it
-  const rightMer = /am|pm/i.test(right) ? right.match(/(am|pm)/i)[1] : null;
-  if (!/am|pm/i.test(left) && rightMer) {
-    left = `${left}${rightMer}`;
-  }
+  // If the phrase includes a day hint, chrono will pick it up from the full text.
+  // Otherwise add "today" so parsing doesn’t float.
+  const dayHint =
+    /\btoday\b|\btmr\b|\btomorrow\b|\bmon(day)?\b|\btue(s|sday)?\b|\bwed(nesday)?\b|\bthu(rsday)?\b|\bfri(day)?\b|\bsat(urday)?\b|\bsun(day)?\b|\bnext\b/i.test(
+      t
+    )
+      ? ""
+      : " today";
 
-  // If text has "tomorrow" or "next wed", attach that day
-  const dayMatch = t.match(
-    /\b(tmr|tomorrow|today|mon(day)?|tue(s|sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?|next)\b/i
-  );
-
-  const base = dayMatch ? dayMatch[0] : "today";
-
-  const leftParsed = chrono.parseDate(`${base} ${left}`, refDate, {
+  const leftParsed = chrono.parseDate(`${left}${dayHint}`, refDate, {
     forwardDate: true,
   });
-  const rightParsed = chrono.parseDate(`${base} ${right}`, refDate, {
+  const rightParsed = chrono.parseDate(`${right}${dayHint}`, refDate, {
     forwardDate: true,
   });
 
@@ -63,6 +68,15 @@ function parseInlineRange(text, refDate) {
   return { start: leftParsed, end: rightParsed };
 }
 
+/**
+ * Main parser — returns:
+ * {
+ *   title: string,
+ *   startISO: string,
+ *   endISO: string,
+ *   timezone: string
+ * }
+ */
 export default function parseFocus(text, opts = {}) {
   if (!text || typeof text !== "string") {
     throw new Error("parseFocus: text is required");
@@ -76,21 +90,23 @@ export default function parseFocus(text, opts = {}) {
 
   const refDate = new Date();
 
-  // First try inline ranges like "2-4pm tomorrow"
-  const ranged = parseInlineRange(text, refDate);
+  // Prefer explicit inline range if detected (e.g., "2-4pm tomorrow — Deep Work")
+  const range = parseInlineRange(text, refDate);
+
+  // Use chrono on the full string to resolve dates like "tomorrow", "next Wed 14:30"
+  const results = chrono.parse(text, refDate, { forwardDate: true });
+
   const title = extractTitle(text) || text.trim();
 
-  if (ranged) {
+  if (range) {
     return {
       title,
-      startISO: toISO(ranged.start),
-      endISO: toISO(ranged.end),
+      startISO: toISO(range.start),
+      endISO: toISO(range.end),
       timezone,
     };
   }
 
-  // Fall back to chrono full parse
-  const results = chrono.parse(text, refDate, { forwardDate: true });
   if (results && results.length > 0) {
     const r = results[0];
     const start = r.start ? r.start.date() : null;
