@@ -1,25 +1,32 @@
-// /utils/focusClient.js
-// Single browser helper used by Chat + Focus page.
-
+// Small client that tries the canonical endpoint first, then aliases.
 export async function createEventFromText(text, timezone) {
-  const r = await fetch("/api/google/calendar/focus", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, timezone }),
-  });
+  const tz =
+    timezone ||
+    (typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : "UTC");
 
-  // Robust JSON read
-  let j = null;
-  try {
-    j = await r.json();
-  } catch {
-    // ignore
+  const payload = { text, timezone: tz };
+
+  const tryFetch = (url) =>
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+  let res = await tryFetch("/api/google/calendar/parse-create");
+  let data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    res = await tryFetch("/api/google/calendar/focus");
+    data = await res.json().catch(() => ({}));
   }
-
-  if (!r.ok || !j?.ok) {
-    const msg = j?.error || j?.message || `Calendar create failed (HTTP ${r.status})`;
-    throw new Error(msg);
+  if (!res.ok || !data?.ok) {
+    res = await tryFetch("/api/google/focus");
+    data = await res.json().catch(() => ({}));
   }
-
-  return j; // { ok: true, parsed, created }
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.message || `HTTP ${res.status}`);
+  }
+  return data; // { ok, parsed, created }
 }
