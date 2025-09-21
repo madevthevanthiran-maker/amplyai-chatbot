@@ -34,7 +34,6 @@ function toISO(d) {
 function parseInlineRange(text, refDate) {
   const t = normalizeRange(text);
 
-  // Try with am/pm variants first, then 24h times.
   const m =
     t.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*-\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i) ||
     t.match(/\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b/);
@@ -44,29 +43,20 @@ function parseInlineRange(text, refDate) {
   const left = m[1];
   const right = m[2];
 
-  // If there is a day hint in the sentence, let chrono handle it.
-  const hasDayHint = /\b(today|tmr|tmrw|tomorrow|next|mon|tue|wed|thu|fri|sat|sun)/i.test(t);
+  const hasDayHint = /\b(today|tmr|tmrw|tomorrow|next|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t);
   const suffix = hasDayHint ? "" : " today";
 
   const start = chrono.parseDate(`${left}${suffix}`, refDate, { forwardDate: true });
   const end = chrono.parseDate(`${right}${suffix}`, refDate, { forwardDate: true });
   if (!start || !end) return null;
 
-  // If end <= start (rare with 12h parsing), roll end +1 day.
   if (end <= start) end.setDate(end.getDate() + 1);
-
   return { start, end };
 }
 
 /**
  * Main parse function.
- * Returns:
- * {
- *   title: string,
- *   startISO: string,
- *   endISO: string,
- *   timezone: string
- * }
+ * Returns: { title, startISO, endISO, timezone }
  */
 export default function parseFocus(text, opts = {}) {
   if (!text || typeof text !== "string") throw new Error("parseFocus: text is required");
@@ -80,7 +70,7 @@ export default function parseFocus(text, opts = {}) {
   const refDate = new Date();
   const cleaned = text.trim();
 
-  // Title: prefer the segment after a dash; else fall back to whole text.
+  // Prefer the part after a dash as the title.
   const title = extractTitle(cleaned) || cleaned;
 
   // 1) Inline range like "2-4pm", "14:00-16:00"
@@ -94,7 +84,7 @@ export default function parseFocus(text, opts = {}) {
     };
   }
 
-  // 2) General parse via chrono; supports "next Wed 14:30", "tomorrow 9-10", etc.
+  // 2) General parse via chrono
   const results = chrono.parse(cleaned, refDate, { forwardDate: true });
   if (results.length > 0) {
     const r = results[0];
@@ -105,12 +95,10 @@ export default function parseFocus(text, opts = {}) {
       return { title, startISO: toISO(start), endISO: toISO(end), timezone };
     }
     if (start) {
-      // Default to a 60-minute block if only a start was found.
       const end1 = new Date(start.getTime() + 60 * 60 * 1000);
       return { title, startISO: toISO(start), endISO: toISO(end1), timezone };
     }
   }
 
-  // 3) No parse
   throw new Error("Couldn’t parse into a date/time");
 }
