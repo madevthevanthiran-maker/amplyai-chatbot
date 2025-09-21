@@ -1,6 +1,8 @@
+// utils/parseFocus.js
 // Natural-language → calendar times using chrono-node.
 // Always returns BOTH startISO and endISO.
 // Import with:  import parseFocus from "@/utils/parseFocus";
+
 import * as chrono from "chrono-node";
 
 /** Replace en/em/minus dashes with hyphen so "2–4pm" parses like "2-4pm". */
@@ -26,8 +28,6 @@ function toISO(d) {
 /**
  * Parse inline time range "2-4pm", "2pm-4pm", "14:00-16:00".
  * Returns { start: Date, end: Date } or null.
- * We let chrono bind the range to the same day using any hints in the text
- * ("tomorrow", "next Wed", etc.). If no hint, we assume "today".
  */
 function parseInlineRange(text, refDate) {
   const t = normalizeRange(text);
@@ -49,7 +49,6 @@ function parseInlineRange(text, refDate) {
   if (!start || !end) return null;
 
   if (end <= start) end.setDate(end.getDate() + 1);
-
   return { start, end };
 }
 
@@ -68,30 +67,23 @@ export default function parseFocus(text, opts = {}) {
 
   const refDate = new Date();
   const cleaned = text.trim();
-
   const title = extractTitle(cleaned) || cleaned;
 
   // 1) Inline range like "2-4pm", "14:00-16:00"
   const range = parseInlineRange(cleaned, refDate);
   if (range) {
-    return {
-      title,
-      startISO: toISO(range.start),
-      endISO: toISO(range.end),
-      timezone,
-    };
+    return { title, startISO: toISO(range.start), endISO: toISO(range.end), timezone };
   }
 
   // 2) General parse via chrono
   const results = chrono.parse(cleaned, refDate, { forwardDate: true });
   if (results.length > 0) {
     const r = results[0];
-    const start = r.start?.date?.() ?? (r.start ? r.start.date() : null);
-    const end = r.end?.date?.() ?? (r.end ? r.end.date() : null);
+    const start = r.start ? r.start.date() : null;
+    const end = r.end ? r.end.date() : null;
 
-    if (start && end) {
-      return { title, startISO: toISO(start), endISO: toISO(end), timezone };
-    }
+    if (start && end) return { title, startISO: toISO(start), endISO: toISO(end), timezone };
+
     if (start) {
       const end1 = new Date(start.getTime() + 60 * 60 * 1000);
       return { title, startISO: toISO(start), endISO: toISO(end1), timezone };
@@ -99,19 +91,4 @@ export default function parseFocus(text, opts = {}) {
   }
 
   throw new Error("Couldn’t parse into a date/time");
-}
-
-/** Convenience browser helper (optional) */
-export async function createFromFreeform(text, timezone) {
-  const r = await fetch("/api/google/calendar/parse-create", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, timezone }),
-  });
-  const j = await r.json();
-  if (!r.ok || !j.ok) {
-    const msg = j?.message || `HTTP ${r.status}`;
-    throw new Error(msg);
-  }
-  return j; // { ok, parsed, created }
 }
