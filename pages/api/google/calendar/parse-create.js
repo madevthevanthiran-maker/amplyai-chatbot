@@ -1,6 +1,4 @@
-// /pages/api/google/calendar/parse-create.js
-// Single source of truth for: free-form text → parsed times → Google Calendar event.
-
+// pages/api/google/calendar/parse-create.js
 import parseFocus from "@/utils/parseFocus";
 import { hydrateClientFromCookie, calendarClient } from "@/lib/googleClient";
 
@@ -11,11 +9,10 @@ export default async function handler(req, res) {
   }
 
   const { text, timezone } = req.body || {};
-  if (!text || typeof text !== "string") {
+  if (!text) {
     return res.status(400).json({ ok: false, message: "Missing 'text' in body" });
   }
 
-  // Ensure Google tokens exist (user connected in Settings)
   const { oauth2, ready } = await hydrateClientFromCookie(req, res);
   if (!ready) {
     return res.status(401).json({
@@ -26,11 +23,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Parse natural language → { title, startISO, endISO, timezone }
     const parsed = parseFocus(text, { timezone });
-
-    // Create event
     const cal = calendarClient(oauth2);
+
     const created = await cal.events.insert({
       calendarId: "primary",
       requestBody: {
