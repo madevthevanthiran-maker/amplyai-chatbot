@@ -1,8 +1,6 @@
-// /utils/parseFocus.js
 // Natural-language → calendar times using chrono-node.
 // Always returns BOTH startISO and endISO.
 // Import with:  import parseFocus from "@/utils/parseFocus";
-
 import * as chrono from "chrono-node";
 
 /** Replace en/em/minus dashes with hyphen so "2–4pm" parses like "2-4pm". */
@@ -51,6 +49,7 @@ function parseInlineRange(text, refDate) {
   if (!start || !end) return null;
 
   if (end <= start) end.setDate(end.getDate() + 1);
+
   return { start, end };
 }
 
@@ -70,7 +69,6 @@ export default function parseFocus(text, opts = {}) {
   const refDate = new Date();
   const cleaned = text.trim();
 
-  // Prefer the part after a dash as the title.
   const title = extractTitle(cleaned) || cleaned;
 
   // 1) Inline range like "2-4pm", "14:00-16:00"
@@ -101,4 +99,19 @@ export default function parseFocus(text, opts = {}) {
   }
 
   throw new Error("Couldn’t parse into a date/time");
+}
+
+/** Convenience browser helper (optional) */
+export async function createFromFreeform(text, timezone) {
+  const r = await fetch("/api/google/calendar/parse-create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, timezone }),
+  });
+  const j = await r.json();
+  if (!r.ok || !j.ok) {
+    const msg = j?.message || `HTTP ${r.status}`;
+    throw new Error(msg);
+  }
+  return j; // { ok, parsed, created }
 }
