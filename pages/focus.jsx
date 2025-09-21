@@ -1,7 +1,5 @@
-// /pages/focus.jsx
 import { useState } from "react";
 import parseFocus from "@/utils/parseFocus";
-import { createEventFromText } from "@/utils/focusClient";
 
 export default function FocusPlayground() {
   const [text, setText] = useState("block 2-4pm tomorrow — Deep Work thesis");
@@ -26,9 +24,15 @@ export default function FocusPlayground() {
     setError("");
     setPreview(null);
     try {
-      const j = await createEventFromText(text, tz);
+      const r = await fetch("/api/google/calendar/parse-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, timezone: tz }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.message || "Create failed");
       setPreview(j.parsed);
-      window.open(j.created.htmlLink, "_blank");
+      if (j.created?.htmlLink) window.open(j.created.htmlLink, "_blank");
     } catch (e) {
       setError(String(e.message || e));
     }
@@ -75,7 +79,7 @@ export default function FocusPlayground() {
       {!!error && <div className="mt-4 text-rose-300">⚠︎ {error}</div>}
       {!!preview && (
         <pre className="mt-4 text-sm bg-white/5 border border-white/10 rounded p-3 overflow-auto">
-          {JSON.stringify(preview, null, 2)}
+{JSON.stringify(preview, null, 2)}
         </pre>
       )}
     </div>
