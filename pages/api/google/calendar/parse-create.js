@@ -1,9 +1,5 @@
-// /pages/api/google/calendar/parse-create.js
 import parseFocus from "@/utils/parseFocus";
-import {
-  hydrateClientFromCookie,
-  calendarClient,
-} from "@/lib/googleClient";
+import { hydrateClientFromCookie, calendarClient } from "@/lib/googleClient";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -13,9 +9,7 @@ export default async function handler(req, res) {
 
   const { text, timezone } = req.body || {};
   if (!text) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "Missing 'text' in body" });
+    return res.status(400).json({ ok: false, message: "Missing 'text' in body" });
   }
 
   const { oauth2, ready } = await hydrateClientFromCookie(req, res);
@@ -36,7 +30,7 @@ export default async function handler(req, res) {
       requestBody: {
         summary: parsed.title,
         start: { dateTime: parsed.startISO, timeZone: parsed.timezone },
-        end: { dateTime: parsed.endISO, timeZone: parsed.timezone },
+        end:   { dateTime: parsed.endISO,   timeZone: parsed.timezone },
       },
     });
 
