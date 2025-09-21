@@ -1,5 +1,46 @@
-// /pages/api/google/focus.js
-// Alias for legacy callers.
-// Route: /api/google/focus → /api/google/calendar/parse-create
+// pages/api/google/focus.js
+import parseFocus from "@/utils/parseFocus";
+import { hydrateClientFromCookie, calendarClient } from "@/lib/googleClient";
 
-export { default } from "./calendar/parse-create";
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ ok: false, message: "Method not allowed" });
+  }
+
+  const { text, timezone } = req.body || {};
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({ ok: false, message: "Missing 'text' in body" });
+  }
+
+  const { oauth2, ready } = await hydrateClientFromCookie(req, res);
+  if (!ready) {
+    return res.status(401).json({
+      ok: false,
+      message: "Not connected",
+      hint: "Open Settings → Connect Google; then refresh.",
+    });
+  }
+
+  try {
+    const parsed = parseFocus(text, { timezone });
+    const cal = calendarClient(oauth2);
+
+    const created = await cal.events.insert({
+      calendarId: "primary",
+      requestBody: {
+        summary: parsed.title,
+        start: { dateTime: parsed.startISO, timeZone: parsed.timezone },
+        end:   { dateTime: parsed.endISO,   timeZone: parsed.timezone },
+      },
+    });
+
+    return res.status(200).json({ ok: true, parsed, created: created.data });
+  } catch (err) {
+    return res.status(422).json({
+      ok: false,
+      message: "Failed to parse or create",
+      error: String(err?.message || err),
+    });
+  }
+}
