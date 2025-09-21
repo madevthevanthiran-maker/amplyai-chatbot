@@ -1,11 +1,10 @@
+// next.config.js
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-
-  // ✅ Do not run ESLint during `next build` on Vercel
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Ensure nothing rewrites /api/**
+  async rewrites() { return []; },
+  async redirects() { return []; },
 };
 
 module.exports = nextConfig;
