@@ -1,14 +1,23 @@
 // middleware.js
 import { NextResponse } from "next/server";
 
-// IMPORTANT: exclude ALL API routes and static assets.
-// If middleware runs on /api and rewrites to a page, POST will 405.
+/**
+ * IMPORTANT:
+ * - Do NOT run middleware on /api/** or on static assets.
+ * - If you have other logic (auth, locales, etc.), keep it here,
+ *   but DO NOT change the matcher below.
+ */
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)',
+    // Everything EXCEPT:
+    // - /api/**
+    // - Next.js static assets
+    // - common public assets
+    '/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|humans.txt).*)',
   ],
 };
 
 export default function middleware() {
+  // If you had redirect/rewrites for pages, keep them here.
   return NextResponse.next();
 }
