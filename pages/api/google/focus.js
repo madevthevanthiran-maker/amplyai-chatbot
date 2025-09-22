@@ -1,10 +1,21 @@
-// pages/api/google/focus.js
+// Creates a calendar event from a natural-language command.
 import parseFocus from "@/utils/parseFocus";
 import { hydrateClientFromCookie, calendarClient } from "@/lib/googleClient";
 
 export default async function handler(req, res) {
+  // ---- CORS / preflight ----
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") {
+    // Allow the preflight and stop here
+    return res.status(200).end();
+  }
+  // --------------------------
+
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+    res.setHeader("Allow", "POST, OPTIONS");
     return res.status(405).json({ ok: false, message: "Method not allowed" });
   }
 
@@ -25,7 +36,6 @@ export default async function handler(req, res) {
   try {
     const parsed = parseFocus(text, { timezone });
     const cal = calendarClient(oauth2);
-
     const created = await cal.events.insert({
       calendarId: "primary",
       requestBody: {
@@ -34,7 +44,6 @@ export default async function handler(req, res) {
         end:   { dateTime: parsed.endISO,   timeZone: parsed.timezone },
       },
     });
-
     return res.status(200).json({ ok: true, parsed, created: created.data });
   } catch (err) {
     return res.status(422).json({
