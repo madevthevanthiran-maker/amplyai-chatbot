@@ -1,30 +1,26 @@
-import { getAuthUrl } from '@/lib/googleClient';
+// /pages/api/google/oauth/start.js
+import { oauth2Client, PROD_ORIGIN } from "@/lib/googleClient";
 
 export default async function handler(req, res) {
-  const PROD_ORIGIN = 'https://amplyai-chatbot.vercel.app';
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") return res.status(405).end();
 
-  // where to send the user back after successful login
-  const returnTo = typeof req.query.returnTo === 'string' && req.query.returnTo.startsWith('http')
-    ? req.query.returnTo
-    : PROD_ORIGIN;
+  const returnTo =
+    (req.query.returnTo && String(req.query.returnTo)) || `${PROD_ORIGIN}/settings`;
 
-  // state carries both CSRF and returnTo
-  const state = {
-    csrf: crypto.randomUUID(),
-    returnTo,
-  };
+  const o = oauth2Client();
+  const url = o.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: [
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "openid",
+    ],
+    state: Buffer.from(JSON.stringify({ returnTo })).toString("base64"),
+  });
 
-  // IMPORTANT: always use the prod redirect URI (must match Google Console)
-  const redirectUri = `${PROD_ORIGIN}/api/google/oauth/callback`;
-
-  const authUrl = getAuthUrl({ redirectUri, state });
-
-  // Set a short-lived cookie to validate CSRF (optional but recommended)
-  res.setHeader('Set-Cookie', [
-    `g_csrf=${state.csrf}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`,
-  ]);
-
-  // Send user to Google
-  res.writeHead(302, { Location: authUrl });
+  res.writeHead(302, { Location: url });
   res.end();
 }
