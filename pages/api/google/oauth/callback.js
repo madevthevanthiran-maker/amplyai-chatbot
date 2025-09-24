@@ -1,42 +1,28 @@
-import { exchangeCodeAndStore } from '@/lib/googleClient';
+// /pages/api/google/oauth/callback.js
+import { oauth2Client, setAuthCookie, PROD_ORIGIN } from "@/lib/googleClient";
 
 export default async function handler(req, res) {
-  const PROD_ORIGIN = 'https://amplyai-chatbot.vercel.app';
+  if (req.method !== "GET") return res.status(405).end();
 
-  const { code, state: rawState } = req.query;
-  if (!code || !rawState) {
-    res.status(400).send('Missing code/state');
-    return;
-  }
+  const { code, state } = req.query || {};
+  if (!code) return res.status(400).send("Missing code");
 
-  let state;
-  try {
-    state = JSON.parse(decodeURIComponent(rawState));
-  } catch {
-    res.status(400).send('Bad state');
-    return;
-  }
-
-  // CSRF check
-  const csrfCookie = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('g_csrf='));
-  const csrf = csrfCookie?.split('=')[1];
-  if (!csrf || csrf !== state.csrf) {
-    res.status(400).send('CSRF failed');
-    return;
-  }
-
-  const redirectUri = `${PROD_ORIGIN}/api/google/oauth/callback`;
+  const returnTo = (() => {
+    try {
+      const s = JSON.parse(Buffer.from(String(state || ""), "base64").toString("utf8"));
+      return typeof s.returnTo === "string" && s.returnTo ? s.returnTo : `${PROD_ORIGIN}/settings`;
+    } catch {
+      return `${PROD_ORIGIN}/settings`;
+    }
+  })();
 
   try {
-    // This should set your session/tokens cookies for the **prod domain**
-    await exchangeCodeAndStore({ req, res, code, redirectUri });
-
-    // Go back to where the user started (preview/local/prod) or default to prod settings
-    const back = state.returnTo || `${PROD_ORIGIN}/settings`;
-    res.writeHead(302, { Location: back });
+    const o = oauth2Client();
+    const { tokens } = await o.getToken(String(code));
+    setAuthCookie(res, tokens);
+    res.writeHead(302, { Location: returnTo });
     res.end();
   } catch (e) {
-    console.error(e);
-    res.status(500).send('OAuth exchange failed');
+    res.status(500).send("Token exchange failed: " + (e.message || String(e)));
   }
 }
