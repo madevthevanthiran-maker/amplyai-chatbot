@@ -1,13 +1,18 @@
 // /pages/api/google/status.js
-import { readAuthCookie } from "@/lib/googleClient";
+import { getEnv, ensureOAuthWithCookie, inferRedirectUri } from "@/lib/googleClient";
 
-export default function handler(req, res) {
-  const { GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI } = process.env;
-  const tokens = readAuthCookie(req);
-  res.status(200).json({
-    ok: true,
-    connected: !!tokens,
-    clientIdSuffix: GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.slice(-8) : null,
-    redirectUri: GOOGLE_REDIRECT_URI,
-  });
+export default async function handler(req, res) {
+  try {
+    const { clientId } = getEnv();
+    const { hasTokens } = ensureOAuthWithCookie(req, res);
+    const redirectUri = inferRedirectUri(req);
+    return res.status(200).json({
+      ok: true,
+      connected: !!hasTokens,
+      clientIdSuffix: clientId ? clientId.split("-")[0] : null,
+      redirectUri,
+    });
+  } catch (e) {
+    return res.status(200).json({ ok: false, error: String(e?.message || e) });
+  }
 }
