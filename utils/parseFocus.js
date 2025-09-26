@@ -1,9 +1,8 @@
-// utils/parseFocus.js (✅ NEW)
+// ✅ FIXED utils/parseFocus.js — with correct chrono-node import and named export
 
 import { parse, addDays, setHours, setMinutes, format, isAfter } from "date-fns";
-import chrono from "chrono-node";
+import * as chrono from "chrono-node"; // ✅ FIXED: named import, no default
 
-// Helper to convert "2-4pm" → { startTime: 14:00, endTime: 16:00 }
 function extractTimeRange(text) {
   const rangeRegex = /(?:from\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
   const match = text.match(rangeRegex);
@@ -16,7 +15,6 @@ function extractTimeRange(text) {
   startMin = parseInt(startMin);
   endMin = parseInt(endMin);
 
-  // Handle periods (am/pm)
   if (startPeriod) {
     if (startPeriod.toLowerCase() === "pm" && startHour < 12) startHour += 12;
     if (startPeriod.toLowerCase() === "am" && startHour === 12) startHour = 0;
@@ -39,7 +37,6 @@ export function parseFocus(input) {
       return { error: "Could not parse time or date from input." };
     }
 
-    // Create start and end datetimes
     const baseDate = date;
     const start = new Date(baseDate);
     start.setHours(timeRange.startHour, timeRange.startMin, 0, 0);
@@ -47,12 +44,10 @@ export function parseFocus(input) {
     const end = new Date(baseDate);
     end.setHours(timeRange.endHour, timeRange.endMin, 0, 0);
 
-    // Ensure end is after start (if not, assume next day)
     if (!isAfter(end, start)) {
       end.setDate(end.getDate() + 1);
     }
 
-    // Extract summary text (remove time info)
     const summary = input
       .replace(/block|schedule|plan|focus|set/i, "")
       .replace(/from.*$/i, "")
