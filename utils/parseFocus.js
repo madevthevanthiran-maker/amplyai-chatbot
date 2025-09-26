@@ -1,67 +1,50 @@
-// ✅ FIXED utils/parseFocus.js — with correct chrono-node import and named export
+// utils/parseFocus.js
 
-import { parse, addDays, setHours, setMinutes, format, isAfter } from "date-fns";
-import * as chrono from "chrono-node"; // ✅ FIXED: named import, no default
+import * as chrono from "chrono-node";
 
-function extractTimeRange(text) {
-  const rangeRegex = /(?:from\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
-  const match = text.match(rangeRegex);
-  if (!match) return null;
+/**
+ * Extract a title from the input string, removing known date/time info.
+ */
+function extractTitle(input, parsedDate) {
+  const refDate = new Date(parsedDate);
 
-  let [ , startHour, startMin = "00", startPeriod, endHour, endMin = "00", endPeriod ] = match;
+  // Extract known parts from chrono
+  const results = chrono.parse(input, refDate);
+  if (results.length === 0) return input;
 
-  startHour = parseInt(startHour);
-  endHour = parseInt(endHour);
-  startMin = parseInt(startMin);
-  endMin = parseInt(endMin);
-
-  if (startPeriod) {
-    if (startPeriod.toLowerCase() === "pm" && startHour < 12) startHour += 12;
-    if (startPeriod.toLowerCase() === "am" && startHour === 12) startHour = 0;
+  let clean = input;
+  for (const result of results) {
+    clean = clean.replace(result.text, "");
   }
 
-  if (endPeriod) {
-    if (endPeriod.toLowerCase() === "pm" && endHour < 12) endHour += 12;
-    if (endPeriod.toLowerCase() === "am" && endHour === 12) endHour = 0;
-  }
-
-  return { startHour, startMin, endHour, endMin };
+  return clean.trim().replace(/^[-–—\s]+/, "").trim();
 }
 
-export function parseFocus(input) {
-  try {
-    const timeRange = extractTimeRange(input);
-    const date = chrono.parseDate(input);
+/**
+ * Attempts to parse natural language input into a calendar event.
+ */
+export default function parseFocus(text, options = {}) {
+  const refDate = options.referenceDate instanceof Date
+    ? options.referenceDate
+    : new Date();
+  const tz = options.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-    if (!date || !timeRange) {
-      return { error: "Could not parse time or date from input." };
-    }
+  const results = chrono.parse(text, refDate);
+  if (!results || results.length === 0) return null;
 
-    const baseDate = date;
-    const start = new Date(baseDate);
-    start.setHours(timeRange.startHour, timeRange.startMin, 0, 0);
+  const result = results[0];
+  const startDate = result.start?.date();
+  const endDate = result.end?.date();
 
-    const end = new Date(baseDate);
-    end.setHours(timeRange.endHour, timeRange.endMin, 0, 0);
+  if (!startDate) return null;
 
-    if (!isAfter(end, start)) {
-      end.setDate(end.getDate() + 1);
-    }
+  let title = extractTitle(text, startDate);
+  if (!title) title = "Untitled event";
 
-    const summary = input
-      .replace(/block|schedule|plan|focus|set/i, "")
-      .replace(/from.*$/i, "")
-      .replace(/(\d{1,2})(?::\d{2})?\s*(am|pm)?\s*(-|to)\s*(\d{1,2})(?::\d{2})?\s*(am|pm)?/gi, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      || "Focus Session";
-
-    return {
-      start: start.toISOString(),
-      end: end.toISOString(),
-      summary,
-    };
-  } catch (err) {
-    return { error: "Parsing failed.", details: err.message };
-  }
+  return {
+    title,
+    startISO: startDate.toISOString(),
+    endISO: (endDate || new Date(startDate.getTime() + 30 * 60000)).toISOString(),
+    timezone: tz,
+  };
 }
