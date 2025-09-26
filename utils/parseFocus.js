@@ -1,50 +1,35 @@
 // utils/parseFocus.js
-
 import * as chrono from "chrono-node";
 
-/**
- * Extract a title from the input string, removing known date/time info.
- */
-function extractTitle(input, parsedDate) {
-  const refDate = new Date(parsedDate);
-
-  // Extract known parts from chrono
-  const results = chrono.parse(input, refDate);
-  if (results.length === 0) return input;
-
-  let clean = input;
-  for (const result of results) {
-    clean = clean.replace(result.text, "");
-  }
-
-  return clean.trim().replace(/^[-–—\s]+/, "").trim();
+function extractTitle(text, datetimeText) {
+  const title = text.replace(datetimeText, "").trim();
+  return title || "Untitled Event";
 }
 
-/**
- * Attempts to parse natural language input into a calendar event.
- */
-export default function parseFocus(text, options = {}) {
-  const refDate = options.referenceDate instanceof Date
-    ? options.referenceDate
-    : new Date();
-  const tz = options.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+function defaultEndTime(startDate) {
+  const end = new Date(startDate);
+  end.setHours(end.getHours() + 1);
+  return end;
+}
 
+export default function parseFocus(text, refDate = new Date(), options = {}) {
   const results = chrono.parse(text, refDate);
-  if (!results || results.length === 0) return null;
+  if (!results || results.length === 0) {
+    throw new Error("Could not parse any date/time");
+  }
 
   const result = results[0];
-  const startDate = result.start?.date();
-  const endDate = result.end?.date();
 
-  if (!startDate) return null;
+  const start = result.start?.date?.();
+  if (!start) throw new Error("No start date found");
 
-  let title = extractTitle(text, startDate);
-  if (!title) title = "Untitled event";
+  const end = result.end?.date?.() || defaultEndTime(start);
+  const timezone = options.timezone || "UTC";
 
   return {
-    title,
-    startISO: startDate.toISOString(),
-    endISO: (endDate || new Date(startDate.getTime() + 30 * 60000)).toISOString(),
-    timezone: tz,
+    startISO: start.toISOString(),
+    endISO: end.toISOString(),
+    title: extractTitle(text, result.text),
+    timezone,
   };
 }
