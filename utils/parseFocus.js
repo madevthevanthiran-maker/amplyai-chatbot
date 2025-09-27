@@ -1,8 +1,16 @@
 import * as chrono from "chrono-node";
 
-function extractTitle(text, datetimeText) {
-  const title = text.replace(datetimeText, "").trim();
-  return title || "Untitled Event";
+// Clean up text before parsing
+function preprocess(text) {
+  return text
+    .replace(/—|–/g, "-")            // Replace em/en dash with hyphen
+    .replace(/\b(tmr|tmrw)\b/gi, "tomorrow")  // Expand common shorthand
+    .replace(/\b(\d{1,2})-(\d{1,2})\s*pm\b/i, "$1pm to $2pm"); // 2-4pm → 2pm to 4pm
+}
+
+function extractTitle(originalText, datetimeText) {
+  const clean = originalText.replace(datetimeText, "").trim();
+  return clean || "Untitled Event";
 }
 
 function defaultEndTime(startDate) {
@@ -12,7 +20,6 @@ function defaultEndTime(startDate) {
 }
 
 export default function parseFocus(text, refDateOrOptions = new Date(), maybeOptions = {}) {
-  // Handle flexible argument pattern
   let refDate = refDateOrOptions;
   let options = maybeOptions;
 
@@ -21,8 +28,11 @@ export default function parseFocus(text, refDateOrOptions = new Date(), maybeOpt
     refDate = new Date();
   }
 
-  const results = chrono.parse(text, refDate);
+  const cleanedText = preprocess(text);
+  const results = chrono.parse(cleanedText, refDate);
+
   if (!results || results.length === 0) {
+    console.warn("⚠ chrono failed to parse:", cleanedText);
     throw new Error("Could not parse any date/time");
   }
 
