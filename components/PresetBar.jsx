@@ -1,65 +1,50 @@
-// ✅ /components/PresetBar.jsx (updated full working version with arrows & working prompt buttons)
-
-import { useEffect, useRef, useState } from "react";
+// components/PresetBar.jsx
+import { useRef } from "react";
 
 export default function PresetBar({ presets = [], onInsert }) {
-  const containerRef = useRef(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  const scrollRef = useRef(null);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const update = () => {
-      setCanScrollLeft(el.scrollLeft > 0);
-      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth);
-    };
-
-    update();
-    el.addEventListener("scroll", update);
-    window.addEventListener("resize", update);
-    return () => {
-      el.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-    };
-  }, [presets]);
-
-  const scroll = (dir) => {
-    const el = containerRef.current;
-    if (!el) return;
-    const distance = el.clientWidth * 0.7;
-    el.scrollBy({ left: dir * distance, behavior: "smooth" });
+  const scroll = (direction) => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollBy({
+      left: direction === "left" ? -150 : 150,
+      behavior: "smooth",
+    });
   };
 
   return (
     <div className="relative">
-      {canScrollLeft && (
+      {/* Scroll Left Button */}
+      {presets.length > 6 && (
         <button
-          onClick={() => scroll(-1)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 px-2 py-1 text-white bg-slate-700 rounded-l-xl shadow"
+          onClick={() => scroll("left")}
+          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-slate-800 p-2 text-white hover:bg-slate-700"
         >
           ←
         </button>
       )}
+
+      {/* Scrollable Presets */}
       <div
-        ref={containerRef}
-        className="flex gap-2 overflow-x-auto scrollbar-hide px-10 py-1"
+        ref={scrollRef}
+        className="no-scrollbar flex gap-2 overflow-x-auto px-8 py-2"
       >
         {presets.map((preset, i) => (
           <button
             key={i}
-            onClick={() => onInsert(preset)}
-            className="shrink-0 bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded-full text-sm"
+            onClick={() => onInsert(preset.text)}
+            className="whitespace-nowrap rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700"
           >
-            {preset}
+            {preset.label}
           </button>
         ))}
       </div>
-      {canScrollRight && (
+
+      {/* Scroll Right Button */}
+      {presets.length > 6 && (
         <button
-          onClick={() => scroll(1)}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 px-2 py-1 text-white bg-slate-700 rounded-r-xl shadow"
+          onClick={() => scroll("right")}
+          className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-slate-800 p-2 text-white hover:bg-slate-700"
         >
           →
         </button>
