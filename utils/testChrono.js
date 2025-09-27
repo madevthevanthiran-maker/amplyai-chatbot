@@ -14,10 +14,15 @@ for (const sentence of tests) {
   console.log("---");
   console.log("Input:", sentence);
   const result = chrono.parse(sentence);
-  console.log("Parsed:", result);
-  if (result.length > 0) {
+  console.log("Raw result:", JSON.stringify(result, null, 2));
+
+  if (result.length === 0) {
+    console.log("⚠️ No date parsed.");
+  } else {
     console.log("Start:", result[0].start?.date());
-    if (result[0].end) console.log("End:", result[0].end.date());
+    if (result[0].end) {
+      console.log("End:", result[0].end.date());
+    }
   }
 }
 
