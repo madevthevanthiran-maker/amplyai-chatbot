@@ -1,14 +1,22 @@
 // utils/parseTime.js
+
 import chrono from "chrono-node";
 
-export function parseNaturalLanguageTime(text, referenceDate = new Date()) {
-  const results = chrono.parse(text, referenceDate);
+export function parseTimeExpression(input) {
+  const parsedDate = chrono.parseDate(input, new Date(), {
+    forwardDate: true,
+  });
 
-  if (results.length === 0) return null;
+  if (!parsedDate) return null;
 
-  const { start, end } = results[0];
-  return {
-    start: start?.date() || null,
-    end: end?.date() || null,
-  };
+  return parsedDate;
+}
+
+export function formatTimeRange(start, end) {
+  const pad = (n) => (n < 10 ? "0" + n : n);
+
+  const startStr = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+  const endStr = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+
+  return `${startStr} - ${endStr}`;
 }
