@@ -1,74 +1,72 @@
 // components/ChatPanel.jsx
 
-import { useChatContext } from "@/context/ChatContext";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export default function ChatPanel() {
-  const {
-    selectedMode,
-    setSelectedMode,
-    presets,
-    modeList
-  } = useChatContext();
-
+export default function ChatPanel({ mode, messages = [], onSend }) {
   const [input, setInput] = useState("");
+  const textareaRef = useRef(null);
+  const containerRef = useRef(null);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: input }] }),
-      });
-      const data = await res.json();
-      console.log("Response:", data);
-    } catch (err) {
-      console.error("Chat error:", err);
+  // Listen for preset insertions
+  useEffect(() => {
+    const handleInsert = (e) => {
+      setInput((prev) => (prev ? prev + " " + e.detail : e.detail));
+    };
+    window.addEventListener("amplyai.insertPreset", handleInsert);
+    return () => window.removeEventListener("amplyai.insertPreset", handleInsert);
+  }, []);
+
+  // Scroll to bottom when new message is added
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-    setInput("");
+  }, [messages]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (input.trim()) {
+        onSend(input.trim());
+        setInput("");
+      }
+    }
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Modes */}
-      <div className="flex gap-2 flex-wrap p-2">
-        {modeList.map((mode) => (
-          <button
-            key={mode.id}
-            onClick={() => setSelectedMode(mode.id)}
-            className={`px-3 py-1 rounded-full ${selectedMode === mode.id ? "bg-white text-black" : "bg-gray-800 text-white"}`}
-          >
-            {mode.label}
-          </button>
+    <div>
+      <div
+        ref={containerRef}
+        className="max-h-[60vh] overflow-y-auto rounded bg-slate-900 p-4 shadow"
+      >
+        {messages.map((m, i) => (
+          <div key={i} className="mb-4">
+            <div className="font-semibold text-slate-400">
+              {m.role === "user" ? "You" : "AmplyAI"}
+            </div>
+            <div className="whitespace-pre-wrap text-slate-100">{m.content}</div>
+          </div>
         ))}
       </div>
 
-      {/* Presets */}
-      <div className="flex gap-2 flex-wrap p-2">
-        {presets.map((preset, i) => (
-          <button
-            key={i}
-            onClick={() => setInput(preset.text)}
-            className="bg-gray-700 text-white px-3 py-1 rounded-full"
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Input */}
-      <div className="p-4 mt-auto">
+      <div className="mt-4">
         <textarea
+          ref={textareaRef}
+          className="w-full rounded border border-slate-600 bg-slate-800 p-2 text-slate-100"
+          rows={3}
+          placeholder="Type a message..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          rows={2}
-          className="w-full p-2 bg-gray-800 text-white rounded"
-          placeholder="Type a message..."
+          onKeyDown={handleKeyDown}
         />
         <button
-          onClick={handleSend}
-          className="mt-2 w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded"
+          className="mt-2 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+          onClick={() => {
+            if (input.trim()) {
+              onSend(input.trim());
+              setInput("");
+            }
+          }}
         >
           Send
         </button>
