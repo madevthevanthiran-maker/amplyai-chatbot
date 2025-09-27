@@ -1,4 +1,3 @@
-// utils/parseFocus.js
 import * as chrono from "chrono-node";
 
 function extractTitle(text, datetimeText) {
@@ -12,7 +11,16 @@ function defaultEndTime(startDate) {
   return end;
 }
 
-export default function parseFocus(text, refDate = new Date(), options = {}) {
+export default function parseFocus(text, refDateOrOptions = new Date(), maybeOptions = {}) {
+  // Handle flexible argument pattern
+  let refDate = refDateOrOptions;
+  let options = maybeOptions;
+
+  if (refDateOrOptions && typeof refDateOrOptions === "object" && !refDateOrOptions.getTime) {
+    options = refDateOrOptions;
+    refDate = new Date();
+  }
+
   const results = chrono.parse(text, refDate);
   if (!results || results.length === 0) {
     throw new Error("Could not parse any date/time");
