@@ -3,29 +3,22 @@
 import chrono from "chrono-node";
 
 /**
- * Parses a natural language string into a start and end time using chrono-node.
- * Fallbacks to 1-hour blocks if no end time is given.
- *
- * @param {string} text - The input string like "2pm to 4pm next Tuesday"
- * @param {Date} refDate - Reference date (defaults to now)
- * @returns {object|null} - { start, end, title } or null if failed
+ * Parses natural language into a start and end datetime.
+ * Examples: "3–4pm tomorrow", "next Mon 10am to 1pm"
  */
-export function parseTimeRange(text, refDate = new Date()) {
-  try {
-    const results = chrono.parse(text, refDate);
-    if (!results?.length) return null;
+export function parseTimeRange(text, refDate = new Date(), options = {}) {
+  const results = chrono.parse(text, refDate, options);
+  if (!results?.length) return null;
 
-    const result = results[0];
-    const start = result.start?.date();
-    const end = result.end?.date() ?? new Date(start.getTime() + 60 * 60 * 1000);
+  const result = results[0];
+  const start = result.start?.date();
+  const end = result.end?.date();
 
-    return {
-      start,
-      end,
-      title: result.text ?? text,
-    };
-  } catch (err) {
-    console.error("[parseTimeRange] error:", err);
-    return null;
-  }
+  if (!start) return null;
+
+  return {
+    start,
+    end: end ?? new Date(start.getTime() + 60 * 60 * 1000), // default to 1 hour
+    title: result.text ?? text,
+  };
 }
