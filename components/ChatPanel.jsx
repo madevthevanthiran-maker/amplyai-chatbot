@@ -53,14 +53,6 @@ const emptyThreads = () =>
   Object.fromEntries(MODES.map(([k]) => [k, defaultGreeting.slice()]));
 const emptyDrafts = () => Object.fromEntries(MODES.map(([k]) => [k, ""]));
 
-function addMinutes(date, n) {
-  return new Date(date.getTime() + n * 60_000);
-}
-function addDays(date, n) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
 function suggestNextSlots(startISO, endISO, count = 3, stepMinutes = 30) {
   const out = [];
   let start = new Date(startISO);
@@ -75,8 +67,6 @@ function suggestNextSlots(startISO, endISO, count = 3, stepMinutes = 30) {
 
 export default function ChatPanel() {
   const rootRef = useRef(null);
-
-  // Make the top “tabs + presets” bar sticky shadow on scroll
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 6);
@@ -130,7 +120,6 @@ export default function ChatPanel() {
   const [connected, setConnected] = useState(false);
   const [tokens, setTokens] = useState(null);
 
-  // One-time Google connection status
   useEffect(() => {
     (async () => {
       try {
@@ -147,36 +136,6 @@ export default function ChatPanel() {
         setConnected(false);
       }
     })();
-  }, []);
-
-  // Hide any accidental duplicate preset/mode bars inserted by other components
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root || typeof document === "undefined") return;
-
-    const hideExternalUIs = () => {
-      document.querySelectorAll(".preset-strip").forEach((el) => {
-        if (!root.contains(el)) (el.closest("div") || el).style.display = "none";
-      });
-      const labels = MODES.map(([, label]) => label);
-      const btns = Array.from(document.querySelectorAll("button"));
-      const candidateRows = new Map();
-      btns.forEach((b) => {
-        const t = (b.textContent || "").trim();
-        if (labels.includes(t)) {
-          const row = b.parentElement?.closest("div");
-          if (row && !root.contains(row)) candidateRows.set(row, (candidateRows.get(row) || 0) + 1);
-        }
-      });
-      candidateRows.forEach((count, row) => {
-        if (count >= 3) row.style.display = "none";
-      });
-    };
-
-    hideExternalUIs();
-    const mo = new MutationObserver(hideExternalUIs);
-    mo.observe(document.body, { childList: true, subtree: true });
-    return () => mo.disconnect();
   }, []);
 
   const setDraft = (mode, text) => setDrafts((prev) => ({ ...prev, [mode]: text }));
@@ -220,8 +179,9 @@ export default function ChatPanel() {
           return;
         }
 
-        // Parse
-        const parsed = parseFocus(text, new Date());
+        // ✅ FIXED LINE: Pass timezone inside options object
+        const parsed = parseFocus(text, new Date(), { timezone: DISPLAY_TZ });
+
         if (!parsed || !parsed.startISO || !parsed.endISO) {
           pushMessage(selectedMode, {
             role: "assistant",
@@ -262,7 +222,6 @@ export default function ChatPanel() {
           return;
         }
 
-        // Create via /api/chat (calendar mode)
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -297,7 +256,7 @@ export default function ChatPanel() {
         return;
       }
 
-      // Normal chat fallback
+      // Normal chat
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -337,7 +296,7 @@ export default function ChatPanel() {
 
   return (
     <div ref={rootRef} className="flex min-h-[calc(100vh-64px)] flex-col bg-[#0b0f1a]">
-      {/* 🔝 Sticky header: modes + preset bar */}
+      {/* Sticky top bar */}
       <div
         className={[
           "sticky top-0 z-40",
@@ -372,7 +331,7 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* Messages + system banners */}
+      {/* Messages */}
       <div className="mx-auto w-full max-w-3xl px-3 md:px-4">
         <div className="space-y-3 pb-24 pt-3">
           {(currentMessages || defaultGreeting).map((m, i) => (
@@ -405,7 +364,6 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* Input */}
       <ChatInput
         value={currentDraft}
         onChange={(v) => setDraft(selectedMode, v)}
@@ -417,7 +375,6 @@ export default function ChatPanel() {
         autosize
       />
 
-      {/* Toast (e.g., Open in Calendar) */}
       {toast && (
         <Toast message={toast.message} link={toast.link} onClose={() => setToast(null)} />
       )}
