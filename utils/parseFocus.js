@@ -1,27 +1,16 @@
-import * as chrono from "chrono-node";
+// ✅ FILE: utils/parseFocus.js
 
-export function parseFocus(text, refDate = new Date(), options = {}) {
-  try {
-    const results = chrono.parse(text, refDate, options);
-    if (!results?.length) return null;
+import { parseTimeFromText } from "./parseTime";
 
-    const result = results[0];
-    const start = result.start?.date();
-    const end = result.end?.date();
+function parseFocus(input) {
+  const timeData = parseTimeFromText(input);
+  if (!timeData) return null;
 
-    if (!start) return null;
-
-    return {
-      text,
-      startISO: start.toISOString(),
-      endISO: end
-        ? end.toISOString()
-        : new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
-      title: result.text ?? text,
-      timezone: options.timezone ?? "UTC",
-    };
-  } catch (err) {
-    console.error("parseFocus error", err);
-    return null;
-  }
+  return {
+    title: timeData.title || "Focus Session",
+    start: timeData.startISO,
+    end: timeData.endISO,
+  };
 }
+
+export default parseFocus;
