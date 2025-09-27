@@ -1,6 +1,5 @@
-// utils/parseTime.js
-
-import chrono from "chrono-node";
+// ✅ Fixed: utils/parseTime.js
+import * as chrono from "chrono-node";
 
 // Parses a sentence like "meeting 2pm tomorrow" and returns { start, end, title }
 export function parseTimeFromText(text, refDate = new Date()) {
