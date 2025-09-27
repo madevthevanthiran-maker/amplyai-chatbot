@@ -24,7 +24,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const parsed = parseFocus(text, new Date(), { timezone }); // ✅ FIXED LINE
+    // Use current date as refDate and pass timezone as separate option
+    const refDate = new Date();
+    const parsed = parseFocus(text, refDate, { timezone });
+
     const cal = calendarClient(oauth2);
 
     const created = await cal.events.insert({
