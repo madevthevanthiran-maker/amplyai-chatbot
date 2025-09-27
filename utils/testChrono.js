@@ -1,26 +1,20 @@
 // utils/testChrono.js
-
 import chrono from "chrono-node";
 
-const inputTexts = [
-  "block 2-4pm tomorrow — Deep Work thesis",
-  "Meeting with supplier tomorrow 3pm",
-  "Work on marketing 9-11am Friday",
-  "Lunch with client next Wednesday at noon"
+const tests = [
+  "block 2-4pm tomorrow",
+  "next wed 14:30 call with supplier",
+  "remind me next Fri at 5pm",
+  "meeting from 9 to 11 next Mon",
 ];
 
-for (const text of inputTexts) {
-  const results = chrono.parse(text);
-  if (!results.length) {
-    console.log(`❌ Failed to parse: "${text}"`);
-    continue;
-  }
-
-  const result = results[0];
-  const start = result.start?.date();
-  const end = result.end?.date();
-  console.log(`✅ "${text}"`);
-  console.log(`   Start: ${start?.toISOString()}`);
-  console.log(`   End:   ${end?.toISOString() || new Date(start.getTime() + 3600000).toISOString()}`);
+for (const sentence of tests) {
+  const result = chrono.parse(sentence);
   console.log("---");
+  console.log("Input:", sentence);
+  console.log("Parsed:", result);
+  if (result.length > 0) {
+    console.log("Start:", result[0].start?.date());
+    if (result[0].end) console.log("End:", result[0].end.date());
+  }
 }
