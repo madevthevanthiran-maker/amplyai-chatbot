@@ -85,10 +85,15 @@ export default function AppPage() {
       <div className="mx-auto max-w-6xl px-4 py-4">
         <ModeTabs mode={mode} setMode={setMode} />
         <div className="mt-3">
-          <PresetBar presets={PRESETS_BY_MODE[mode]} onInsert={handlePresetInsert} />
+          <PresetBar presets={PRESETS_BY_MODE[mode] || []} onInsert={handlePresetInsert} />
         </div>
         <div className="mt-3">
-          <ChatPanel mode={mode} messages={currentMessages} onSend={handleSend} />
+          <ChatPanel
+            mode={mode}
+            messages={currentMessages}
+            onSend={handleSend}
+            setMessages={setCurrentMessages}
+          />
         </div>
       </div>
     </div>
