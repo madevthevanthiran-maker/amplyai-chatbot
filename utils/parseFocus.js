@@ -1,41 +1,20 @@
-// /utils/parseFocus.js
-import chrono from "chrono-node";
+// utils/parseFocus.js
 
-export default function parseFocus(text, refDate = new Date(), options = {}) {
-  try {
-    console.log("🧪 parseFocus input:", text);
-    console.log("📆 refDate:", refDate.toString());
+import { parseTimeInput } from "./parseTime";
 
-    const results = chrono.parse(text, refDate, options);
+export function parseFocus(input) {
+  const blocked = [];
+  const lines = input.split("\n");
 
-    if (!results?.length) {
-      console.warn("❌ chrono.parse returned no results.");
-      return null;
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (lower.includes("block")) {
+      const timeInfo = parseTimeInput(line);
+      if (timeInfo) {
+        blocked.push(timeInfo);
+      }
     }
-
-    const result = results[0];
-    const start = result.start?.date();
-    const end = result.end?.date();
-
-    if (!start) {
-      console.warn("❌ Parsed result missing start time.");
-      return null;
-    }
-
-    const parsed = {
-      text,
-      startISO: start.toISOString(),
-      endISO: end
-        ? end.toISOString()
-        : new Date(start.getTime() + 60 * 60 * 1000).toISOString(), // default 1hr
-      title: result.text ?? text,
-      timezone: options.timezone ?? "UTC",
-    };
-
-    console.log("✅ Parsed:", parsed);
-    return parsed;
-  } catch (err) {
-    console.error("💥 parseFocus error:", err);
-    return null;
   }
+
+  return { blocked };
 }
