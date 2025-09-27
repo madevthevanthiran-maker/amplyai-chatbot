@@ -19,7 +19,6 @@ export default function parseFocus(text, refDate = new Date(), options = {}) {
   }
 
   const result = results[0];
-
   const start = result.start?.date?.();
   if (!start) throw new Error("No start date found");
 
