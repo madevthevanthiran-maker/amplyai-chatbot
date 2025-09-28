@@ -1,54 +1,34 @@
-// components/PresetBar.jsx
-import { useRef } from "react";
+// /components/PresetBar.jsx
+
+import { useEffect, useRef } from "react";
 
 export default function PresetBar({ presets = [], onInsert }) {
-  const scrollRef = useRef(null);
+  const containerRef = useRef(null);
 
-  const scroll = (direction) => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollBy({
-      left: direction === "left" ? -150 : 150,
-      behavior: "smooth",
-    });
-  };
+  useEffect(() => {
+    const handle = (e) => {
+      if (!containerRef.current) return;
+      if (e.detail && typeof e.detail === "string") {
+        onInsert?.(e.detail);
+      }
+    };
+    window.addEventListener("amplyai.insertPreset", handle);
+    return () => window.removeEventListener("amplyai.insertPreset", handle);
+  }, [onInsert]);
+
+  if (!presets.length) return null;
 
   return (
-    <div className="relative">
-      {/* Scroll Left Button */}
-      {presets.length > 6 && (
+    <div className="flex items-center gap-2 overflow-x-auto py-2 scrollbar-hide" ref={containerRef}>
+      {presets.map((text, i) => (
         <button
-          onClick={() => scroll("left")}
-          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-slate-800 p-2 text-white hover:bg-slate-700"
+          key={i}
+          onClick={() => onInsert(text)}
+          className="shrink-0 rounded-full border border-slate-700 px-3 py-1 text-sm text-slate-200 hover:bg-slate-800 transition"
         >
-          ←
+          {text.length > 30 ? text.slice(0, 30) + "…" : text}
         </button>
-      )}
-
-      {/* Scrollable Presets */}
-      <div
-        ref={scrollRef}
-        className="no-scrollbar flex gap-2 overflow-x-auto px-8 py-2"
-      >
-        {presets.map((preset, i) => (
-          <button
-            key={i}
-            onClick={() => onInsert(preset.text)}
-            className="whitespace-nowrap rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700"
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Scroll Right Button */}
-      {presets.length > 6 && (
-        <button
-          onClick={() => scroll("right")}
-          className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-slate-800 p-2 text-white hover:bg-slate-700"
-        >
-          →
-        </button>
-      )}
+      ))}
     </div>
   );
 }
