@@ -1,76 +1,87 @@
-// components/ChatPanel.jsx
+// /components/ChatPanel.jsx
 
 import { useEffect, useRef, useState } from "react";
+import { MODE_LIST } from "@/lib/modes";
+import PresetBar from "./PresetBar";
 
-export default function ChatPanel({ mode, messages = [], onSend }) {
+export default function ChatPanel({ messages, onSend }) {
+  const [mode, setMode] = useState(MODE_LIST[0]);
   const [input, setInput] = useState("");
-  const textareaRef = useRef(null);
+  const [presets, setPresets] = useState(mode.presets || []);
   const containerRef = useRef(null);
 
-  // Listen for preset insertions
   useEffect(() => {
-    const handleInsert = (e) => {
-      setInput((prev) => (prev ? prev + " " + e.detail : e.detail));
-    };
-    window.addEventListener("amplyai.insertPreset", handleInsert);
-    return () => window.removeEventListener("amplyai.insertPreset", handleInsert);
-  }, []);
+    setPresets(mode.presets || []);
+  }, [mode]);
 
-  // Scroll to bottom when new message is added
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [messages]);
+  const handleSend = () => {
+    if (!input.trim()) return;
+    onSend(input, mode.system);
+    setInput("");
+  };
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (input.trim()) {
-        onSend(input.trim());
-        setInput("");
-      }
+      handleSend();
     }
   };
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2 pb-1">
+        {MODE_LIST.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setMode(m)}
+            className={`rounded-full px-3 py-1 text-sm font-medium transition ${
+              mode.id === m.id
+                ? "bg-slate-600 text-white"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Preset Prompts */}
+      <PresetBar
+        presets={presets}
+        onInsert={(text) => setInput(text)}
+      />
+
+      {/* Message Display */}
       <div
         ref={containerRef}
-        className="max-h-[60vh] overflow-y-auto rounded bg-slate-900 p-4 shadow"
+        className="flex flex-col gap-2 p-3 rounded-lg bg-slate-900 text-slate-100 h-64 overflow-y-auto border border-slate-700"
       >
-        {messages.map((m, i) => (
-          <div key={i} className="mb-4">
-            <div className="font-semibold text-slate-400">
-              {m.role === "user" ? "You" : "AmplyAI"}
-            </div>
-            <div className="whitespace-pre-wrap text-slate-100">{m.content}</div>
+        {messages.map((msg, i) => (
+          <div key={i}>
+            <strong>{msg.role === "user" ? "You" : "AmplyAI"}</strong>
+            <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
           </div>
         ))}
       </div>
 
-      <div className="mt-4">
-        <textarea
-          ref={textareaRef}
-          className="w-full rounded border border-slate-600 bg-slate-800 p-2 text-slate-100"
-          rows={3}
-          placeholder="Type a message..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-        <button
-          className="mt-2 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-          onClick={() => {
-            if (input.trim()) {
-              onSend(input.trim());
-              setInput("");
-            }
-          }}
-        >
-          Send
-        </button>
-      </div>
+      {/* Input Box */}
+      <textarea
+        className="w-full rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        rows={2}
+        placeholder="Type a message..."
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+
+      {/* Send Button */}
+      <button
+        onClick={handleSend}
+        className="rounded-lg bg-blue-600 py-2 px-4 text-white hover:bg-blue-700 transition"
+      >
+        Send
+      </button>
     </div>
   );
 }
