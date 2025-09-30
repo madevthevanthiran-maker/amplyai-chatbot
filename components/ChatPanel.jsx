@@ -28,7 +28,7 @@ export default function ChatPanel({ messages, onSend }) {
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 pb-1">
         {MODE_LIST.map((m) => (
@@ -52,10 +52,10 @@ export default function ChatPanel({ messages, onSend }) {
         onInsert={(text) => setInput(text)}
       />
 
-      {/* Message Display */}
+      {/* Chat Display */}
       <div
         ref={containerRef}
-        className="flex flex-col gap-2 p-3 rounded-lg bg-slate-900 text-slate-100 h-64 overflow-y-auto border border-slate-700"
+        className="flex flex-col gap-3 p-3 rounded-lg bg-slate-900 text-slate-100 h-64 overflow-y-auto border border-slate-700"
       >
         {messages.map((msg, i) => (
           <div key={i}>
@@ -65,7 +65,7 @@ export default function ChatPanel({ messages, onSend }) {
         ))}
       </div>
 
-      {/* Input Box */}
+      {/* Message Input */}
       <textarea
         className="w-full rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
         rows={2}
