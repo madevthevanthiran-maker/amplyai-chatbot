@@ -1,6 +1,4 @@
-// File: /pages/app.js
-// Goal: Make each mode (Chat, MailMate, etc.) have its own chat + working premade prompts
-
+// pages/app.jsx
 import { useEffect, useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import ModeTabs from "@/components/ModeTabs";
@@ -16,6 +14,7 @@ export default function AppPage() {
     planner: [],
   });
 
+  // Load per-tab history from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -24,6 +23,7 @@ export default function AppPage() {
     } catch {}
   }, []);
 
+  // Save per-tab history
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
