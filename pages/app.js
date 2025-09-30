@@ -1,7 +1,11 @@
-// pages/app.js
+// File: /pages/app.js
+// Goal: Make each mode (Chat, MailMate, etc.) have its own chat + working premade prompts
 
 import { useEffect, useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
+import ModeTabs from "@/components/ModeTabs";
+import PresetBar from "@/components/PresetBar";
+import { PRESETS_BY_MODE } from "@/lib/modes";
 
 export default function AppPage() {
   const [mode, setMode] = useState("general");
@@ -12,7 +16,6 @@ export default function AppPage() {
     planner: [],
   });
 
-  // Load history from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -21,7 +24,6 @@ export default function AppPage() {
     } catch {}
   }, []);
 
-  // Save history
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -55,10 +57,7 @@ export default function AppPage() {
       if (!res.ok) {
         setCurrentMessages((prev) => [
           ...prev,
-          {
-            role: "assistant",
-            content: `⚠️ ${data?.error || "Request failed."}`,
-          },
+          { role: "assistant", content: `⚠️ ${data?.error || "Request failed."}` },
         ]);
         return;
       }
@@ -70,10 +69,7 @@ export default function AppPage() {
     } catch (err) {
       setCurrentMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content: `⚠️ ${err?.message || "Network error"}`,
-        },
+        { role: "assistant", content: `⚠️ ${err?.message || "Network error"}` },
       ]);
     }
   };
@@ -85,14 +81,18 @@ export default function AppPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-4">
-        <ChatPanel
-          mode={mode}
-          messages={currentMessages}
-          onSend={handleSend}
-          setMessages={setCurrentMessages}
-          setMode={setMode}
-          onInsertPreset={handlePresetInsert}
-        />
+        <ModeTabs mode={mode} setMode={setMode} />
+        <div className="mt-3">
+          <PresetBar presets={PRESETS_BY_MODE[mode] || []} onInsert={handlePresetInsert} />
+        </div>
+        <div className="mt-3">
+          <ChatPanel
+            mode={mode}
+            messages={currentMessages}
+            onSend={handleSend}
+            setMessages={setCurrentMessages}
+          />
+        </div>
       </div>
     </div>
   );
