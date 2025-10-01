@@ -1,52 +1,70 @@
+// components/PresetBar.jsx
+
 import { useEffect, useRef, useState } from "react";
 
-export default function PresetBar({ presets, onInsert }) {
-  const containerRef = useRef(null);
-  const [showArrows, setShowArrows] = useState(false);
+export default function PresetBar({ presets = [], onInsert }) {
+  const scrollRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   useEffect(() => {
-    const container = containerRef.current;
-    const checkOverflow = () => {
-      setShowArrows(container?.scrollWidth > container?.clientWidth);
+    const checkScroll = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      setCanScrollLeft(el.scrollLeft > 0);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth);
     };
-    checkOverflow();
-    window.addEventListener("resize", checkOverflow);
-    return () => window.removeEventListener("resize", checkOverflow);
-  }, [presets]);
+    checkScroll();
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkScroll);
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, []);
+
+  const scrollBy = (delta) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: delta, behavior: "smooth" });
+  };
 
   return (
     <div className="relative">
-      {showArrows && (
-        <>
-          <button
-            onClick={() => (containerRef.current.scrollLeft -= 150)}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-slate-800 px-2 py-1 rounded-l-md shadow"
-          >
-            ◀
-          </button>
-          <button
-            onClick={() => (containerRef.current.scrollLeft += 150)}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-slate-800 px-2 py-1 rounded-r-md shadow"
-          >
-            ▶
-          </button>
-        </>
+      {canScrollLeft && (
+        <button
+          onClick={() => scrollBy(-150)}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 px-2 py-1 bg-slate-900 hover:bg-slate-800 rounded-full shadow text-white"
+          aria-label="Scroll left"
+        >
+          ◀
+        </button>
       )}
-
       <div
-        ref={containerRef}
-        className="flex gap-2 overflow-x-auto scrollbar-hide px-4"
+        ref={scrollRef}
+        className="flex overflow-x-auto no-scrollbar gap-2 px-8 py-2"
       >
-        {presets.map((preset, idx) => (
+        {presets.map((preset, i) => (
           <button
-            key={idx}
-            onClick={() => onInsert(preset)}
-            className="bg-slate-700 text-sm text-white px-3 py-1 rounded-full whitespace-nowrap hover:bg-slate-600 transition"
+            key={i}
+            onClick={() => onInsert(preset.text)}
+            className="shrink-0 rounded-full bg-slate-800 px-3 py-1 text-sm text-white hover:bg-slate-700 border border-slate-700"
           >
-            {preset.length > 40 ? preset.slice(0, 37) + "..." : preset}
+            {preset.label}
           </button>
         ))}
       </div>
+      {canScrollRight && (
+        <button
+          onClick={() => scrollBy(150)}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 px-2 py-1 bg-slate-900 hover:bg-slate-800 rounded-full shadow text-white"
+          aria-label="Scroll right"
+        >
+          ▶
+        </button>
+      )}
     </div>
   );
 }
