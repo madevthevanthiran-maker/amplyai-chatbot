@@ -1,57 +1,84 @@
-// components/ChatPanel.jsx
 import { useEffect, useRef, useState } from "react";
 
 export default function ChatPanel({ mode, messages, onSend, setMessages }) {
   const [input, setInput] = useState("");
-  const bottomRef = useRef(null);
+  const textareaRef = useRef(null);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  // Listen for preset prompt insertion
+  useEffect(() => {
+    const handleInsert = (e) => {
+      if (typeof e.detail !== "string") return;
+      setInput((prev) => prev + e.detail);
+      textareaRef.current?.focus();
+    };
+    window.addEventListener("amplyai.insertPreset", handleInsert);
+    return () => window.removeEventListener("amplyai.insertPreset", handleInsert);
+  }, []);
+
+  const handleSubmit = async () => {
     if (!input.trim()) return;
-    onSend(input.trim());
+
+    const userMessage = { role: "user", content: input };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setInput("");
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, messages: newMessages }),
+      });
+      const data = await res.json();
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data?.text || "(No response)" },
+      ]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `⚠️ ${err.message || "Network error"}` },
+      ]);
+    }
   };
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
 
   return (
-    <div>
-      <div className="rounded-xl bg-slate-900 p-4 space-y-4 h-[60vh] overflow-y-auto text-sm">
-        {messages.map((m, i) => (
-          <div key={i} className="whitespace-pre-wrap">
-            <span className="font-semibold text-white">
-              {m.role === "user" ? "You" : "AmplyAI"}
-            </span>
-            <div className="text-slate-300 mt-1">
-              {m.content || (m.role === "assistant" && "(No response)")}
+    <div className="bg-slate-900 rounded-lg p-4 shadow-md">
+      <div className="space-y-4 overflow-y-auto max-h-[60vh]">
+        {messages.map((msg, i) => (
+          <div key={i}>
+            <div className={`font-bold ${msg.role === "user" ? "text-white" : "text-green-400"}`}>
+              {msg.role === "user" ? "You" : "AmplyAI"}
             </div>
+            <div className="whitespace-pre-wrap">{msg.content}</div>
           </div>
         ))}
-        <div ref={bottomRef} />
       </div>
-      <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
+      <div className="mt-4 flex gap-2">
         <textarea
-          rows={1}
-          className="flex-1 p-2 rounded bg-slate-800 text-white resize-none"
+          ref={textareaRef}
+          rows={2}
+          className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
           placeholder="Type a message..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSubmit(e);
-            }
-          }}
+          onKeyDown={handleKeyDown}
         />
         <button
-          type="submit"
-          className="bg-blue-600 px-4 py-2 rounded text-white hover:bg-blue-500"
+          onClick={handleSubmit}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
         >
           Send
         </button>
-      </form>
+      </div>
     </div>
   );
 }
