@@ -1,15 +1,21 @@
-export default function PresetBar({ presets = [], onInsert }) {
-  if (!presets || presets.length === 0) return null;
+// /components/PresetBar.jsx
+export default function PresetBar({ presets = [], onInsert, onSend }) {
+  if (!presets.length) return null;
+
+  const handleClick = (text) => {
+    if (onInsert) onInsert(text);       // still allows typing it in box
+    if (onSend) onSend(text);           // ✅ auto-send message
+  };
 
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
-      {presets.map((preset, i) => (
+      {presets.map((p, i) => (
         <button
           key={i}
-          onClick={() => onInsert(preset)}
-          className="shrink-0 px-4 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-sm text-slate-200 transition"
+          onClick={() => handleClick(p)}
+          className="whitespace-nowrap rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 text-xs transition"
         >
-          {preset}
+          {p}
         </button>
       ))}
     </div>
