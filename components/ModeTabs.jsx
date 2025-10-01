@@ -1,4 +1,3 @@
-// /components/ModeTabs.jsx
 export default function ModeTabs({ mode, setMode }) {
   const modes = [
     { id: "general", label: "Chat (general)" },
@@ -13,10 +12,10 @@ export default function ModeTabs({ mode, setMode }) {
         <button
           key={m.id}
           onClick={() => setMode(m.id)}
-          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+          className={`rounded-full px-3 py-1 text-sm font-medium transition ${
             mode === m.id
-              ? "bg-slate-100 text-slate-900"
-              : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+              ? "bg-slate-600 text-white"
+              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
           }`}
         >
           {m.label}
