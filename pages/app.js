@@ -1,11 +1,11 @@
+// /pages/app.jsx
 import { useEffect, useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import ModeTabs from "@/components/ModeTabs";
-import PresetBar from "@/components/PresetBar";
-import { PRESETS_BY_MODE } from "@/lib/modes";
+import { MODE_LIST } from "@/lib/modes";
 
 export default function AppPage() {
-  const [mode, setMode] = useState("general");
+  const [modeId, setModeId] = useState("general");
   const [history, setHistory] = useState({
     general: [],
     mailmate: [],
@@ -13,7 +13,9 @@ export default function AppPage() {
     planner: [],
   });
 
-  // Load per-tab history from localStorage (client only)
+  const mode = MODE_LIST.find((m) => m.id === modeId) || MODE_LIST[0];
+
+  // Load history from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -22,7 +24,7 @@ export default function AppPage() {
     } catch {}
   }, []);
 
-  // Save per-tab history
+  // Save history to localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -30,12 +32,13 @@ export default function AppPage() {
     } catch {}
   }, [history]);
 
-  const currentMessages = history[mode] || [];
+  const currentMessages = history[mode.id] || [];
+
   const setCurrentMessages = (fnOrArr) => {
     setHistory((prev) => {
       const next =
-        typeof fnOrArr === "function" ? fnOrArr(prev[mode] || []) : fnOrArr;
-      return { ...prev, [mode]: next };
+        typeof fnOrArr === "function" ? fnOrArr(prev[mode.id] || []) : fnOrArr;
+      return { ...prev, [mode.id]: next };
     });
   };
 
@@ -47,11 +50,19 @@ export default function AppPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode,
+          mode: mode.id,
           messages: [...currentMessages, { role: "user", content }],
         }),
       });
       const data = await res.json();
+
+      if (!res.ok) {
+        setCurrentMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `⚠️ ${data?.error || "Request failed."}` },
+        ]);
+        return;
+      }
 
       setCurrentMessages((prev) => [
         ...prev,
@@ -65,18 +76,13 @@ export default function AppPage() {
     }
   };
 
-  const handlePresetInsert = (text) => {
-    // Dispatch event so ChatPanel picks it up
-    window.dispatchEvent(new CustomEvent("amplyai.insertPreset", { detail: text }));
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-4">
-        <ModeTabs mode={mode} setMode={setMode} />
-        <div className="mt-3">
-          <PresetBar presets={PRESETS_BY_MODE[mode] || []} onInsert={handlePresetInsert} />
-        </div>
+        {/* Mode Tabs */}
+        <ModeTabs mode={modeId} setMode={setModeId} />
+
+        {/* Chat Panel */}
         <div className="mt-3">
           <ChatPanel
             mode={mode}
