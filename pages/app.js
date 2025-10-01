@@ -1,9 +1,8 @@
-// pages/app.jsx
 import { useEffect, useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import ModeTabs from "@/components/ModeTabs";
 import PresetBar from "@/components/PresetBar";
-import { PRESETS_BY_MODE } from "@/lib/modes";
+import { PRESETS_BY_MODE, MODE_SYSTEM_PROMPTS } from "@/lib/modes";
 
 export default function AppPage() {
   const [mode, setMode] = useState("general");
@@ -14,7 +13,6 @@ export default function AppPage() {
     planner: [],
   });
 
-  // Load history from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -23,7 +21,6 @@ export default function AppPage() {
     } catch {}
   }, []);
 
-  // Save history to localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -48,8 +45,8 @@ export default function AppPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode,
           messages: [...currentMessages, { role: "user", content }],
+          system: MODE_SYSTEM_PROMPTS[mode],
         }),
       });
       const data = await res.json();
@@ -89,8 +86,8 @@ export default function AppPage() {
           <ChatPanel
             mode={mode}
             messages={currentMessages}
-            onSend={handleSend}
             setMessages={setCurrentMessages}
+            onSend={handleSend}
           />
         </div>
       </div>
