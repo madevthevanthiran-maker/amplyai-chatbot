@@ -1,9 +1,6 @@
 // pages/app.jsx
 import { useEffect, useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
-import ModeTabs from "@/components/ModeTabs";
-import PresetBar from "@/components/PresetBar";
-import { PRESETS_BY_MODE } from "@/lib/modes";
 
 export default function AppPage() {
   const [mode, setMode] = useState("general");
@@ -14,7 +11,6 @@ export default function AppPage() {
     planner: [],
   });
 
-  // Load per-tab history from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -23,7 +19,6 @@ export default function AppPage() {
     } catch {}
   }, []);
 
-  // Save per-tab history
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -74,25 +69,15 @@ export default function AppPage() {
     }
   };
 
-  const handlePresetInsert = (text) => {
-    window.dispatchEvent(new CustomEvent("amplyai.insertPreset", { detail: text }));
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-4">
-        <ModeTabs mode={mode} setMode={setMode} />
-        <div className="mt-3">
-          <PresetBar presets={PRESETS_BY_MODE[mode] || []} onInsert={handlePresetInsert} />
-        </div>
-        <div className="mt-3">
-          <ChatPanel
-            mode={mode}
-            messages={currentMessages}
-            onSend={handleSend}
-            setMessages={setCurrentMessages}
-          />
-        </div>
+        <ChatPanel
+          mode={mode}
+          messages={currentMessages}
+          onSend={handleSend}
+          setMessages={setCurrentMessages}
+        />
       </div>
     </div>
   );
