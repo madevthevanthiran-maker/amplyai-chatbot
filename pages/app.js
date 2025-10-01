@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import ModeTabs from "@/components/ModeTabs";
 import PresetBar from "@/components/PresetBar";
-import { PRESETS_BY_MODE, MODE_SYSTEM_PROMPTS } from "@/lib/modes";
+import { PRESETS_BY_MODE } from "@/lib/modes";
 
 export default function AppPage() {
   const [mode, setMode] = useState("general");
@@ -13,6 +13,7 @@ export default function AppPage() {
     planner: [],
   });
 
+  // Load per-tab history from localStorage (client only)
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -21,6 +22,7 @@ export default function AppPage() {
     } catch {}
   }, []);
 
+  // Save per-tab history
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -45,19 +47,11 @@ export default function AppPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode,
           messages: [...currentMessages, { role: "user", content }],
-          system: MODE_SYSTEM_PROMPTS[mode],
         }),
       });
       const data = await res.json();
-
-      if (!res.ok) {
-        setCurrentMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: `⚠️ ${data?.error || "Request failed."}` },
-        ]);
-        return;
-      }
 
       setCurrentMessages((prev) => [
         ...prev,
@@ -72,6 +66,7 @@ export default function AppPage() {
   };
 
   const handlePresetInsert = (text) => {
+    // Dispatch event so ChatPanel picks it up
     window.dispatchEvent(new CustomEvent("amplyai.insertPreset", { detail: text }));
   };
 
@@ -86,8 +81,8 @@ export default function AppPage() {
           <ChatPanel
             mode={mode}
             messages={currentMessages}
-            setMessages={setCurrentMessages}
             onSend={handleSend}
+            setMessages={setCurrentMessages}
           />
         </div>
       </div>
