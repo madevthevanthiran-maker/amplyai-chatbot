@@ -1,34 +1,52 @@
-// /components/PresetBar.jsx
+import { useEffect, useRef, useState } from "react";
 
-import { useEffect, useRef } from "react";
-
-export default function PresetBar({ presets = [], onInsert }) {
+export default function PresetBar({ presets, onInsert }) {
   const containerRef = useRef(null);
+  const [showArrows, setShowArrows] = useState(false);
 
   useEffect(() => {
-    const handle = (e) => {
-      if (!containerRef.current) return;
-      if (e.detail && typeof e.detail === "string") {
-        onInsert?.(e.detail);
-      }
+    const container = containerRef.current;
+    const checkOverflow = () => {
+      setShowArrows(container?.scrollWidth > container?.clientWidth);
     };
-    window.addEventListener("amplyai.insertPreset", handle);
-    return () => window.removeEventListener("amplyai.insertPreset", handle);
-  }, [onInsert]);
-
-  if (!presets.length) return null;
+    checkOverflow();
+    window.addEventListener("resize", checkOverflow);
+    return () => window.removeEventListener("resize", checkOverflow);
+  }, [presets]);
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto py-2 scrollbar-hide" ref={containerRef}>
-      {presets.map((text, i) => (
-        <button
-          key={i}
-          onClick={() => onInsert(text)}
-          className="shrink-0 rounded-full border border-slate-700 px-3 py-1 text-sm text-slate-200 hover:bg-slate-800 transition"
-        >
-          {text.length > 30 ? text.slice(0, 30) + "…" : text}
-        </button>
-      ))}
+    <div className="relative">
+      {showArrows && (
+        <>
+          <button
+            onClick={() => (containerRef.current.scrollLeft -= 150)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-slate-800 px-2 py-1 rounded-l-md shadow"
+          >
+            ◀
+          </button>
+          <button
+            onClick={() => (containerRef.current.scrollLeft += 150)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-slate-800 px-2 py-1 rounded-r-md shadow"
+          >
+            ▶
+          </button>
+        </>
+      )}
+
+      <div
+        ref={containerRef}
+        className="flex gap-2 overflow-x-auto scrollbar-hide px-4"
+      >
+        {presets.map((preset, idx) => (
+          <button
+            key={idx}
+            onClick={() => onInsert(preset)}
+            className="bg-slate-700 text-sm text-white px-3 py-1 rounded-full whitespace-nowrap hover:bg-slate-600 transition"
+          >
+            {preset.length > 40 ? preset.slice(0, 37) + "..." : preset}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
