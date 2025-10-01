@@ -2,9 +2,14 @@
 export default function PresetBar({ presets = [], onInsert, onSend }) {
   if (!presets.length) return null;
 
-  const handleClick = (text) => {
-    if (onInsert) onInsert(text);       // still allows typing it in box
-    if (onSend) onSend(text);           // ✅ auto-send message
+  const handleClick = (text, e) => {
+    if (e.shiftKey) {
+      // SHIFT+click → only insert into the input
+      if (onInsert) onInsert(text);
+    } else {
+      // normal click → auto-send immediately
+      if (onSend) onSend(text);
+    }
   };
 
   return (
@@ -12,7 +17,7 @@ export default function PresetBar({ presets = [], onInsert, onSend }) {
       {presets.map((p, i) => (
         <button
           key={i}
-          onClick={() => handleClick(p)}
+          onClick={(e) => handleClick(p, e)}
           className="whitespace-nowrap rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 text-xs transition"
         >
           {p}
