@@ -1,26 +1,23 @@
+// /components/ChatPanel.jsx
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import { MODE_LIST } from "@/lib/modes";
+import PresetBar from "./PresetBar";
 
 export default function ChatPanel({ mode, messages, onSend, setMessages }) {
   const [input, setInput] = useState("");
   const containerRef = useRef(null);
 
-  // Auto-scroll to bottom whenever messages update
+  // Auto-scroll to bottom when new messages appear
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // Listen for preset insert events
-  useEffect(() => {
-    const handler = (e) => setInput(e.detail);
-    window.addEventListener("amplyai.insertPreset", handler);
-    return () => window.removeEventListener("amplyai.insertPreset", handler);
-  }, []);
-
   const handleSend = () => {
     if (!input.trim()) return;
-    onSend(input);
+    onSend(input, mode);
     setInput("");
   };
 
@@ -31,28 +28,27 @@ export default function ChatPanel({ mode, messages, onSend, setMessages }) {
     }
   };
 
-  // Strip markdown-like **text**
-  const cleanText = (text) => text.replace(/\*\*(.*?)\*\*/g, "$1");
-
   return (
-    <div className="flex flex-col gap-2">
-      {/* Chat Window */}
+    <div className="flex flex-col gap-2 h-full">
+      {/* Preset Prompts */}
+      <PresetBar presets={mode.presets || []} onInsert={(text) => setInput(text)} />
+
+      {/* Message Display */}
       <div
         ref={containerRef}
-        className="flex flex-col gap-2 p-3 rounded-lg bg-slate-900 text-slate-100 h-96 overflow-y-auto border border-slate-700"
+        className="flex flex-col gap-3 p-3 rounded-lg bg-slate-900 text-slate-100 flex-grow overflow-y-auto border border-slate-700"
       >
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`p-2 rounded ${
-              msg.role === "user"
-                ? "bg-slate-800 text-blue-300 self-end"
-                : "bg-slate-800 text-green-300 self-start"
-            }`}
-          >
-            <strong>{msg.role === "user" ? "You" : "AmplyAI"}</strong>
-            <div className="whitespace-pre-wrap text-sm mt-1">
-              {cleanText(msg.content)}
+          <div key={i} className="text-sm">
+            <strong
+              className={`block mb-1 ${
+                msg.role === "user" ? "text-blue-400" : "text-green-400"
+              }`}
+            >
+              {msg.role === "user" ? "You" : "AmplyAI"}
+            </strong>
+            <div className="prose prose-invert max-w-none">
+              <ReactMarkdown>{msg.content}</ReactMarkdown>
             </div>
           </div>
         ))}
